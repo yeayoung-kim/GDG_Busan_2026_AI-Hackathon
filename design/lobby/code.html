@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALIGN.AI - Lobby</title>
+<!-- Google Fonts & Material Symbols -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config from Brand Anchors -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "outline-variant": "#434933",
+                        "on-tertiary-fixed": "#081e2a",
+                        "surface-dim": "#131313",
+                        "tertiary-container": "#d0e5f6",
+                        "surface": "#131313",
+                        "surface-bright": "#393939",
+                        "primary": "#ffffff",
+                        "error": "#ffb4ab",
+                        "primary-fixed": "#bdf500",
+                        "tertiary-fixed": "#d0e5f6",
+                        "on-secondary-container": "#b4b5b5",
+                        "surface-variant": "#353535",
+                        "on-surface-variant": "#c3caac",
+                        "surface-container-highest": "#353535",
+                        "inverse-primary": "#4e6700",
+                        "on-tertiary-container": "#536775",
+                        "on-primary-container": "#536d00",
+                        "on-secondary": "#2f3131",
+                        "on-primary-fixed": "#151f00",
+                        "inverse-surface": "#e5e2e1",
+                        "primary-container": "#bdf500",
+                        "background": "#131313",
+                        "secondary-fixed": "#e2e2e2",
+                        "secondary-container": "#454747",
+                        "on-error": "#690005",
+                        "outline": "#8d9479",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "tertiary-fixed-dim": "#b5c9da",
+                        "on-error-container": "#ffdad6",
+                        "surface-tint": "#a6d700",
+                        "primary-fixed-dim": "#a6d700",
+                        "on-tertiary": "#1f333f",
+                        "surface-container-high": "#2a2a2a",
+                        "tertiary": "#ffffff",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary": "#273500",
+                        "secondary": "#c6c6c7",
+                        "surface-container-low": "#1c1b1b",
+                        "on-primary-fixed-variant": "#3a4d00",
+                        "on-secondary-fixed-variant": "#454747",
+                        "on-tertiary-fixed-variant": "#364957",
+                        "surface-container": "#20201f",
+                        "inverse-on-surface": "#313030",
+                        "error-container": "#93000a",
+                        "on-background": "#e5e2e1"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "40px",
+                        "panel-width": "360px",
+                        "gutter": "24px",
+                        "unit": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.15em", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "letterSpacing": "0.01em", "fontWeight": "400" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "900" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0.02em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Hide scrollbar for a cleaner minimal look */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        body {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex flex-col items-center justify-center p-container-padding antialiased">
+<!-- Header / Brand Section -->
+<header class="flex flex-col items-center text-center mb-16 space-y-4">
+<h1 class="font-display-lg text-display-lg text-primary-container tracking-widest uppercase">
+            ALIGN.AI
+        </h1>
+<p class="font-label-caps text-label-caps text-secondary uppercase">
+            PANGYO VIBE OPTIMIZATION PROTOCOL
+        </p>
+</header>
+<!-- Main Canvas Area -->
+<main class="w-full max-w-3xl flex flex-col items-center space-y-12">
+<!-- Video Preview Container (Raw Rectangle, Inactive Placeholder) -->
+<div class="w-full aspect-video bg-surface-container border border-outline-variant flex flex-col items-center justify-center relative rounded-none shadow-none">
+<span class="material-symbols-outlined text-outline-variant text-6xl mb-4" style="font-variation-settings: 'FILL' 0;">
+                videocam_off
+            </span>
+<span class="font-label-caps text-label-caps text-outline-variant uppercase tracking-widest">
+                Camera Inactive
+            </span>
+</div>
+<!-- Action / Input Area -->
+<div class="flex flex-col items-center space-y-8 w-full max-w-sm">
+<div class="text-center space-y-6 w-full">
+<label class="block font-body-sm text-body-sm text-on-surface-variant" for="room-code">
+                    Enter room code to align.
+                </label>
+<!-- Centrally aligned minimal input -->
+<input autocomplete="off" class="w-full bg-transparent border-0 border-b border-primary text-center font-headline-md text-headline-md text-primary placeholder-surface-variant focus:ring-0 focus:border-primary-container focus:placeholder-transparent transition-colors py-2 rounded-none" id="room-code" placeholder="ROOM CODE" spellcheck="false" type="text"/>
+</div>
+<!-- Primary Action Button -->
+<button class="w-full bg-primary-container text-on-primary-container font-label-caps text-label-caps py-4 px-8 uppercase tracking-widest hover:bg-surface-tint transition-colors rounded-none shadow-none flex justify-center items-center gap-2 group">
+                Join Room
+                <span class="material-symbols-outlined text-[16px] group-hover:translate-x-1 transition-transform" style="font-variation-settings: 'FILL' 1;">
+                    arrow_forward
+                </span>
+</button>
+</div>
+</main>
+</body></html>

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "framer-motion": "^12.38.0",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"
@@ -25,4 +26,3 @@
     "typescript": "latest"
   }
 }
-

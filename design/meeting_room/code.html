@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALIGN.AI - Meeting Room</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "outline-variant": "#434933",
+                        "on-tertiary-fixed": "#081e2a",
+                        "surface-dim": "#131313",
+                        "tertiary-container": "#d0e5f6",
+                        "surface": "#131313",
+                        "surface-bright": "#393939",
+                        "primary": "#ffffff",
+                        "error": "#ffb4ab",
+                        "primary-fixed": "#bdf500",
+                        "tertiary-fixed": "#d0e5f6",
+                        "on-secondary-container": "#b4b5b5",
+                        "surface-variant": "#353535",
+                        "on-surface-variant": "#c3caac",
+                        "surface-container-highest": "#353535",
+                        "inverse-primary": "#4e6700",
+                        "on-tertiary-container": "#536775",
+                        "on-primary-container": "#536d00",
+                        "on-secondary": "#2f3131",
+                        "on-primary-fixed": "#151f00",
+                        "inverse-surface": "#e5e2e1",
+                        "primary-container": "#bdf500",
+                        "background": "#131313",
+                        "secondary-fixed": "#e2e2e2",
+                        "secondary-container": "#454747",
+                        "on-error": "#690005",
+                        "outline": "#8d9479",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "tertiary-fixed-dim": "#b5c9da",
+                        "on-error-container": "#ffdad6",
+                        "surface-tint": "#a6d700",
+                        "primary-fixed-dim": "#a6d700",
+                        "on-tertiary": "#1f333f",
+                        "surface-container-high": "#2a2a2a",
+                        "tertiary": "#ffffff",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary": "#273500",
+                        "secondary": "#c6c6c7",
+                        "surface-container-low": "#1c1b1b",
+                        "on-primary-fixed-variant": "#3a4d00",
+                        "on-secondary-fixed-variant": "#454747",
+                        "on-tertiary-fixed-variant": "#364957",
+                        "surface-container": "#20201f",
+                        "inverse-on-surface": "#313030",
+                        "error-container": "#93000a",
+                        "on-background": "#e5e2e1"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "40px",
+                        "panel-width": "360px",
+                        "gutter": "24px",
+                        "unit": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.15em", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "letterSpacing": "0.01em", "fontWeight": "400" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0.02em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Base overrides to ensure strict adherence to "Precision Minimalist" */
+        body {
+            background-color: #000000; /* Level 0 Base */
+            color: #e5e2e1;
+            margin: 0;
+            overflow: hidden;
+        }
+        /* Custom scrollbar for minimalist look */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #353535;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #c5ff00;
+        }
+    </style>
+</head>
+<body class="font-body-sm h-screen w-screen flex flex-col relative">
+<!-- TopAppBar -->
+<header class="bg-black text-[#c5ff00] font-['Inter'] font-bold tracking-tighter uppercase docked full-width top-0 border-b border-zinc-800 flat no shadows flex justify-between items-center w-full px-10 h-16 fixed z-50">
+<div class="text-xl font-black tracking-widest text-[#c5ff00]">ALIGN.AI</div>
+<div class="flex items-center gap-6">
+<span class="text-white text-xs font-mono tracking-widest">Room: PGY-902</span>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-white hover:text-[#c5ff00] transition-colors scale-100 active:scale-95 cursor-pointer text-sm" data-icon="settings">settings</span>
+<span class="material-symbols-outlined text-white hover:text-[#c5ff00] transition-colors scale-100 active:scale-95 cursor-pointer text-sm" data-icon="help">help</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas (Fixed-Fluid Hybrid) -->
+<main class="fixed top-16 left-0 bottom-20 right-80 flex p-container-padding gap-gutter bg-black">
+<!-- Video Feed 1 (User - Local) -->
+<div class="flex-1 relative bg-surface-container-lowest border border-zinc-800 flex flex-col">
+<img class="w-full h-full object-cover opacity-90" data-alt="professional woman in a stark, dimly lit modern concrete office looking intensely at camera, cool tones, minimal background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmepSf0zYW4ydWS149Q61GVLFvY6XqeqdE0_AsymUoy0jQE_sAgOPtmHxzZA1o9di1JnhzKr5HS75emgZhrTQWJqiU5_HSiwX1uJ1Q9EsZgYXrYY0y70xoFcar8mGezBypPQPtTpdO12SrCp3wC8bjU_uyyxQcWmy8Ya_VEFxnM1aQWzFlKL-Li7HV10b4oJ2SYNYtXNlI-3-zz0FyeB0StW2ddqULBuDn7YaDBY171U4JvIA5YF7RXGdeLV6ABsk544can5AkUVU"/>
+<!-- Video Overlay Controls -->
+<div class="absolute bottom-6 left-6 flex items-center gap-4">
+<div class="bg-black border border-zinc-700 px-3 py-1.5 flex items-center gap-2">
+<div class="w-2 h-2 bg-[#c5ff00]"></div>
+<span class="font-mono text-[10px] text-white tracking-widest uppercase">User_01 (Local)</span>
+</div>
+</div>
+</div>
+<!-- Video Feed 2 (Remote Participant) -->
+<div class="flex-1 relative bg-surface-container-lowest border border-zinc-800 flex flex-col">
+<img class="w-full h-full object-cover opacity-80 grayscale" data-alt="man in high-end minimalist grey architectural space looking off-camera during video call, stark directional lighting, serious mood" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAGY2IG1Hb7nSKYEvqA1Xf36iukNRpn6Enn46BEuT0-Q00EI8yEbvlRg1ENll5I-pNPQKfkJaKDxoCDFc5-At3Zp8RzeUgQD5ANOCQ5FzP0pIn1gRwvLCozaosRk4YpuRtPwsfRZvRTeC0-na5mK3wNHY-1FAq1iHQj6VQipWwTSPVVlCvbPULTYCT0cia1HJPFWX-wiCrM0V0GGCwzUc27-rQwEohMEJSqJuZ_iEipNyAIfhaPTqn-MZ-qTcviYz_UZC9dqrx75KM"/>
+<!-- Video Overlay Controls -->
+<div class="absolute bottom-6 left-6 flex items-center gap-4">
+<div class="bg-black border border-zinc-700 px-3 py-1.5 flex items-center gap-2">
+<div class="w-2 h-2 bg-zinc-600"></div>
+<span class="font-mono text-[10px] text-zinc-400 tracking-widest uppercase">Remote_PGY</span>
+</div>
+</div>
+<!-- Audio Waveform Visualization Placeholder (Minimalist) -->
+<div class="absolute bottom-6 right-6 flex items-end gap-1 h-4">
+<div class="w-1 bg-[#c5ff00] h-full opacity-80"></div>
+<div class="w-1 bg-[#c5ff00] h-2/3 opacity-80"></div>
+<div class="w-1 bg-[#c5ff00] h-full opacity-80"></div>
+<div class="w-1 bg-[#c5ff00] h-1/2 opacity-80"></div>
+</div>
+</div>
+</main>
+<!-- SideNavBar (Speech Log) -->
+<aside class="bg-[#1A1A1A] text-[#c5ff00] font-['Inter'] text-xs font-mono tracking-tight docked right-0 h-full w-80 border-l border-zinc-600 flat no shadows fixed right-0 top-16 bottom-20 flex flex-col py-6 z-40">
+<!-- Header -->
+<div class="px-6 pb-6 border-b border-zinc-800 mb-6 flex flex-col gap-2">
+<div class="text-[#c5ff00] font-bold tracking-widest">SPEECH_MONITOR</div>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 bg-[#c5ff00] shadow-[0_0_8px_#c5ff00]"></div> <!-- Neon indicator -->
+<span class="text-white text-[10px] tracking-widest">LIVE_SYNC_ACTIVE</span>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<div class="flex flex-col gap-4 mb-8">
+<div class="text-[#c5ff00] border-l-2 border-[#c5ff00] pl-4 flex items-center gap-3 cursor-default">
+<span class="material-symbols-outlined text-sm" data-icon="segment">segment</span>
+<span class="uppercase tracking-widest">Logs</span>
+</div>
+<div class="text-zinc-500 pl-4 hover:text-white Transition weight on hover cursor-pointer flex items-center gap-3">
+<span class="material-symbols-outlined text-sm" data-icon="analytics">analytics</span>
+<span class="uppercase tracking-widest">Metrics</span>
+</div>
+</div>
+<!-- Transcription Timeline -->
+<div class="flex-1 overflow-y-auto px-6 flex flex-col gap-6">
+<!-- Past Entry -->
+<div class="flex flex-col gap-2 pl-3 border-l-2 border-transparent">
+<div class="flex justify-between items-end">
+<span class="font-label-caps text-label-caps text-zinc-500">User_01</span>
+<span class="text-[10px] text-zinc-600">14:02:11</span>
+</div>
+<p class="font-body-sm text-body-sm text-zinc-400">
+                    Let's align on the core deliverables for the next sprint. I want to ensure we hit the KPIs.
+                </p>
+<div class="flex items-center gap-1.5 mt-1">
+<span class="material-symbols-outlined text-[10px] text-zinc-600" data-icon="check">check</span>
+<span class="text-[9px] text-zinc-600 uppercase tracking-widest">Standard Syntax</span>
+</div>
+</div>
+<!-- Targeted Entry (Pangyo-style) -->
+<div class="flex flex-col gap-2 pl-3 border-l-2 border-transparent">
+<div class="flex justify-between items-end">
+<span class="font-label-caps text-label-caps text-zinc-500">Remote_PGY</span>
+<span class="text-[10px] text-zinc-600">14:02:45</span>
+</div>
+<p class="font-body-sm text-body-sm text-zinc-400">
+                    Agreed. I will pivot the resources to focus on the end-to-end user journey. We need more granular data.
+                </p>
+<div class="flex items-center gap-1.5 mt-1">
+<span class="material-symbols-outlined text-[10px] text-green-500" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-[9px] text-zinc-400 uppercase tracking-widest">Pangyo-Style Match</span>
+</div>
+</div>
+<!-- Active Speaking Entry -->
+<div class="flex flex-col gap-2 pl-3 border-l-2 border-[#c5ff00]">
+<div class="flex justify-between items-end">
+<span class="font-label-caps text-label-caps text-[#c5ff00]">Remote_PGY</span>
+<span class="text-[10px] text-zinc-600">14:03:12</span>
+</div>
+<p class="font-body-sm text-body-sm text-white">
+                    Moving forward, let's establish a more robust feedback loop. I'll circle back with the engineering pod by EOD to finalize the architectural runway...
+                </p>
+<div class="flex items-center gap-1.5 mt-1">
+<span class="material-symbols-outlined text-[10px] text-green-500" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-[9px] text-[#c5ff00] uppercase tracking-widest">Pangyo-Style Match</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- BottomNavBar (Controls) -->
+<nav class="bg-black text-[#c5ff00] font-['Inter'] text-[10px] uppercase font-bold tracking-widest docked fixed bottom-0 w-full border-t border-zinc-800 flat no shadows fixed bottom-0 left-0 w-full z-50 flex justify-center gap-12 items-center h-20 px-10">
+<!-- Mute (Inactive State) -->
+<button class="flex flex-col items-center justify-center text-white pt-2 hover:bg-zinc-900 group w-20 h-full transition-colors border-t-2 border-transparent hover:border-zinc-700">
+<span class="material-symbols-outlined mb-1 text-zinc-400 group-hover:text-white transition-colors text-xl" data-icon="mic">mic</span>
+<span class="text-zinc-500 group-hover:text-white transition-colors">Mute</span>
+</button>
+<!-- Camera (Inactive State) -->
+<button class="flex flex-col items-center justify-center text-white pt-2 hover:bg-zinc-900 group w-20 h-full transition-colors border-t-2 border-transparent hover:border-zinc-700">
+<span class="material-symbols-outlined mb-1 text-zinc-400 group-hover:text-white transition-colors text-xl" data-icon="videocam">videocam</span>
+<span class="text-zinc-500 group-hover:text-white transition-colors">Camera</span>
+</button>
+<!-- Record (Active State) -->
+<button class="flex flex-col items-center justify-center text-[#c5ff00] border-t-2 border-[#c5ff00] pt-2 w-20 h-full bg-[#1A1A1A]">
+<span class="material-symbols-outlined mb-1 text-[#c5ff00] text-xl" data-icon="fiber_manual_record" style="font-variation-settings: 'FILL' 1;">fiber_manual_record</span>
+<span class="text-[#c5ff00]">Record</span>
+</button>
+<!-- Leave (Exception State - Minimal Red Stroke) -->
+<button class="flex flex-col items-center justify-center text-white pt-2 hover:bg-[#1A1A1A] group w-20 h-full transition-colors border-t-2 border-transparent">
+<span class="material-symbols-outlined mb-1 text-red-500/80 group-hover:text-red-500 transition-colors text-xl" data-icon="call_end">call_end</span>
+<span class="text-red-500/80 group-hover:text-red-500 transition-colors">Leave</span>
+</button>
+</nav>
+</body></html>

@@ -11,11 +11,9 @@ interface RoomPageProps {
 
 export default async function RoomPage({ params, searchParams }: RoomPageProps) {
   const [{ roomId }, resolvedSearchParams] = await Promise.all([params, searchParams]);
+  const participantName = resolvedSearchParams.name?.trim() || "USER_GUEST";
 
   return (
-    <LiveRoomScreen
-      roomId={roomId}
-      participantName={resolvedSearchParams.name?.trim() ?? ""}
-    />
+    <LiveRoomScreen roomId={roomId} participantName={participantName} />
   );
 }

@@ -1,290 +1,252 @@
 "use client";
 
+import { startTransition, useState, type ComponentType, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import {
+  ArrowRightIcon,
+  CameraOffIcon,
+  MicIcon,
+  MicOffIcon,
+  PlayIcon,
+  WarningTriangleIcon,
+} from "@/components/shared/align-icons";
 
-function createRoomCode() {
-  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
-  return Array.from({ length: 6 }, () => {
-    const index = Math.floor(Math.random() * alphabet.length);
-    return alphabet[index];
-  }).join("");
-}
+type HomeStage = "landing" | "guide" | "lobby";
 
-const features = [
+const DISPLAY_NAME_STORAGE_KEY = "align-display-name";
+const DEFAULT_ROOM_CODE = "PGY-902";
+
+const guidelineSteps: Array<{
+  step: string;
+  title: string;
+  body: string;
+  icon: ComponentType<{ className?: string }>;
+}> = [
   {
-    title: "실시간 화상회의",
-    body: "브라우저에서 바로 2명이 접속해 카메라와 마이크를 공유합니다.",
+    step: "01",
+    title: "실시간 발화 모니터링",
+    body: "2인 화상 회의 중 오가는 모든 대화의 '판교 핏(Fit)'과 허세 지수를 시스템이 실시간으로 스캔합니다.",
+    icon: MicIcon,
   },
   {
-    title: "판교어 모더레이션",
-    body: "STT로 발화를 읽고 판교 밀도를 점수화해 통과 여부를 즉시 판단합니다.",
+    step: "02",
+    title: "위험 발화 감지",
+    body: "너무 직관적이고 쉬운 한국어(비-판교어)가 감지되어 조직의 밸류가 떨어질 위험이 생기면 즉각 경고가 발생합니다.",
+    icon: WarningTriangleIcon,
   },
   {
-    title: "자동 음소거 + TTS",
-    body: "기준 미달 시 참가자 전체를 잠깐 묶고 교정된 문장을 다시 읽어줍니다.",
+    step: "03",
+    title: "강제 입틀막",
+    body: "더 이상의 촌스러운 소통을 막기 위해, 즉시 양측 참가자의 마이크를 강제 차단(Mute)하여 입을 막습니다.",
+    icon: MicOffIcon,
+  },
+  {
+    step: "04",
+    title: "판교어 음성으로 강제 교체",
+    body: "AI가 당신의 투박한 진심을 '완벽한 판교어'로 포장한 뒤, 세련된 기계음(TTS)으로 대신 대독합니다.",
+    icon: PlayIcon,
   },
 ];
 
+function createDisplayName() {
+  return `USER_${Math.floor(100 + Math.random() * 900)}`;
+}
+
+function readOrCreateDisplayName() {
+  const storedName = window.localStorage.getItem(DISPLAY_NAME_STORAGE_KEY)?.trim();
+
+  if (storedName) {
+    return storedName;
+  }
+
+  const generatedName = createDisplayName();
+  window.localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, generatedName);
+  return generatedName;
+}
+
+function LandingHero({ onStart }: { onStart: () => void }) {
+  return (
+    <section className="screen-fade flex min-h-screen items-center justify-center bg-black px-6 py-20 text-center sm:px-10">
+      <div className="flex w-full max-w-4xl flex-col items-center">
+        <div>
+          <h1 className="text-[clamp(4.5rem,11vw,7.6rem)] font-black uppercase leading-[0.9] tracking-[-0.09em] text-white">
+            ALIGN<span className="text-[var(--align-accent)]">.</span>AI
+          </h1>
+          <p className="mt-7 text-[clamp(1.2rem,2vw,2rem)] font-medium tracking-[-0.04em] text-[#787b84]">
+            조직의 소통을 막는 커뮤니케이션 솔루션
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onStart}
+          className="group mt-16 inline-flex items-center gap-3 rounded-[10px] bg-[var(--align-accent)] px-12 py-4 text-[0.84rem] font-semibold uppercase tracking-[0.3em] text-black transition duration-200 hover:translate-y-[1px]"
+        >
+          <span>START</span>
+          <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function GuidelineStage({ onNext }: { onNext: () => void }) {
+  return (
+    <section className="screen-fade min-h-screen bg-black px-8 py-14 text-white sm:px-12 lg:px-20 xl:px-24 xl:py-16">
+      <div className="mx-auto flex min-h-[calc(100vh-7rem)] max-w-[1180px] flex-col">
+        <header className="max-w-4xl">
+          <h2 className="text-[clamp(3.3rem,6vw,4.7rem)] font-black uppercase leading-[0.94] tracking-[-0.08em] text-[var(--align-accent)]">
+            GUIDE LINE
+          </h2>
+          <p className="mt-6 text-[clamp(1rem,1.6vw,1.45rem)] font-medium tracking-[-0.03em] text-[#9b9b9b]">
+            경고: 이 회의실에서는 간지 없는 쉬운 한국어를 쓸 수 없습니다
+          </p>
+        </header>
+
+        <div className="mt-16 grid gap-6 md:grid-cols-2 xl:mt-20">
+          {guidelineSteps.map(({ step, title, body, icon: Icon }) => (
+            <article
+              key={step}
+              className="min-h-[174px] border border-white/14 bg-[#121212] px-8 py-10"
+            >
+              <div className="flex items-center gap-5 text-[var(--align-accent)]">
+                <span className="font-mono text-[1.1rem] font-semibold tracking-[0.18em]">
+                  {step}
+                </span>
+                <Icon className="h-7 w-7" />
+              </div>
+              <h3 className="mt-8 text-[clamp(1.9rem,2.2vw,2.7rem)] font-bold leading-[1.15] tracking-[-0.05em] text-[#e5e3df]">
+                {title}
+              </h3>
+              <p className="mt-4 max-w-[30rem] text-[1rem] leading-[1.6] tracking-[-0.02em] text-[#c5c1b2]">
+                {body}
+              </p>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-auto flex justify-center border-t border-white/12 pt-9 md:justify-end">
+          <button
+            type="button"
+            onClick={onNext}
+            className="group inline-flex min-w-[320px] items-center justify-center gap-3 rounded-full bg-[var(--align-accent)] px-12 py-6 text-[0.82rem] font-semibold uppercase tracking-[0.22em] text-black transition duration-200 hover:translate-y-[1px]"
+          >
+            <span>ENTER CONFERENCE ROOM</span>
+            <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+interface LobbyStageProps {
+  roomCode: string;
+  onRoomCodeChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+function LobbyStage({
+  roomCode,
+  onRoomCodeChange,
+  onSubmit,
+}: LobbyStageProps) {
+  return (
+    <section className="screen-fade flex min-h-screen items-center justify-center bg-[#151515] px-6 py-12 text-white sm:px-10">
+      <div className="flex w-full max-w-[980px] flex-col items-center">
+        <header className="mb-14 text-center">
+          <h2 className="text-[clamp(3.7rem,10vw,5.7rem)] font-black uppercase leading-none tracking-[-0.07em] text-[var(--align-accent)]">
+            ALIGN.AI
+          </h2>
+          <p className="mt-4 text-sm uppercase tracking-[0.35em] text-[#c2c2c2] sm:text-base">
+            PANGYO VIBE OPTIMIZATION PROTOCOL
+          </p>
+        </header>
+
+        <div className="w-full border border-[var(--align-border-strong)] bg-[#252525]">
+          <div className="flex aspect-video w-full flex-col items-center justify-center px-8 text-center">
+            <CameraOffIcon className="h-16 w-16 text-[#4d5633]" />
+            <p className="mt-5 text-[0.95rem] uppercase tracking-[0.28em] text-[#4d5633]">
+              CAMERA INACTIVE
+            </p>
+          </div>
+        </div>
+
+        <form
+          className="mt-16 flex w-full max-w-[480px] flex-col items-center"
+          onSubmit={onSubmit}
+        >
+          <label className="w-full text-center">
+            <span className="block text-[1rem] tracking-[-0.03em] text-[#c9ccb7]">
+              Enter room code to align.
+            </span>
+            <input
+              autoComplete="off"
+              spellCheck={false}
+              value={roomCode}
+              onChange={(event) => onRoomCodeChange(event.target.value)}
+              placeholder="ROOM CODE"
+              className="mt-8 w-full border-0 border-b border-white/80 bg-transparent px-0 pb-3 text-center text-[clamp(2rem,5vw,3.4rem)] font-black uppercase tracking-[0.12em] text-[#262626] outline-none transition-colors placeholder:text-[#2f2f2f] focus:border-[var(--align-accent)] focus:text-white focus:placeholder:text-transparent"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={!roomCode.trim()}
+            className="group mt-10 inline-flex w-full items-center justify-center gap-3 bg-[var(--align-accent)] px-8 py-5 text-[0.82rem] font-semibold uppercase tracking-[0.26em] text-black transition duration-200 hover:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span>JOIN ROOM</span>
+            <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
 export function LandingScreen() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [roomCode, setRoomCode] = useState(createRoomCode());
+  const [stage, setStage] = useState<HomeStage>("landing");
+  const [roomCode, setRoomCode] = useState(DEFAULT_ROOM_CODE);
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  function handleRoomJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const trimmedName = name.trim();
-    const trimmedRoomCode = roomCode.trim().toLowerCase();
+    const normalizedRoomCode = roomCode.trim().toLowerCase();
+    const participantName = readOrCreateDisplayName();
 
-    if (!trimmedName || !trimmedRoomCode) {
+    if (!normalizedRoomCode || !participantName.trim()) {
       return;
     }
 
-    router.push(`/room/${trimmedRoomCode}?name=${encodeURIComponent(trimmedName)}`);
+    router.push(
+      `/room/${encodeURIComponent(normalizedRoomCode)}?name=${encodeURIComponent(participantName)}`,
+    );
+  }
+
+  function moveToGuide() {
+    startTransition(() => {
+      setStage("guide");
+    });
+  }
+
+  function moveToLobby() {
+    startTransition(() => {
+      setStage("lobby");
+    });
   }
 
   return (
-    <main className="align-shell min-h-screen px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-[1500px] flex-col rounded-[40px] border border-white/8 bg-black px-5 py-5 sm:px-8 sm:py-8">
-        <header className="neon-line flex flex-col gap-6 border-b border-white/8 pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <span className="align-badge">Align.ai</span>
-            <div className="max-w-3xl space-y-4">
-              <h1 className="editorial-title text-5xl leading-none tracking-[-0.05em] text-white sm:text-6xl lg:text-8xl">
-                조직의 말을
-                <br />
-                판교식으로 정렬하는
-                <br />
-                회의 인터셉터
-              </h1>
-              <p className="max-w-2xl text-base text-[#bbbbb4] sm:text-lg">
-                블랙박스처럼 조용히 지켜보다가, 판교어가 아닌 순간만 개입합니다.
-                참가자 두 명이 같은 방에 들어와 바로 화상 통화를 시작할 수 있고,
-                비즈니스 톤이 무너지면 시스템이 음소거와 TTS로 회의를 다시 정렬합니다.
-              </p>
-            </div>
-          </div>
-
-          <div className="w-full max-w-[420px] space-y-3">
-            <div className="surface-card p-5">
-              <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                <span>Deploy Stack</span>
-                <span>Cloud Run / GCP TTS</span>
-              </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="data-card p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Call
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-white">2P</p>
-                </div>
-                <div className="data-card p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Flow
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-white">STT</p>
-                </div>
-                <div className="data-card p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Voice
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-white">TTS</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="surface-card ticker-grid p-5">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                Moderation Logic
-              </p>
-              <div className="mt-4 space-y-3 text-sm text-[#c7c7c1]">
-                <div className="hairline-frame p-4">
-                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Pass
-                  </p>
-                  <p className="mt-2">
-                    얼라인, 오너십, 액션 아이템 같은 판교어가 충분하면 원문 그대로
-                    송출합니다.
-                  </p>
-                </div>
-                <div className="hairline-frame p-4">
-                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Block
-                  </p>
-                  <p className="mt-2">
-                    몰라요, 못 해요, 그냥 같은 표현이 감지되면 전체 음성을 잠깐
-                    묶고 교정 문장을 다시 읽습니다.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <section className="grid flex-1 gap-6 py-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-6">
-            <div className="surface-card p-6 sm:p-8">
-              <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-                <div className="max-w-2xl">
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                    Project Intro
-                  </p>
-                  <h2 className="editorial-title mt-4 text-3xl leading-tight text-white sm:text-4xl">
-                    온라인 화상 통화 중 판교어가 아니면 시스템이 직접 개입합니다.
-                  </h2>
-                </div>
-                <p className="max-w-md text-sm leading-7 text-[#9f9f98]">
-                  해커톤 데모에 맞춰 별도 앱 설치 없이 웹 브라우저에서 바로
-                  동작하도록 설계했습니다. 브라우저 STT, WebRTC, GCP TTS를 조합해
-                  비용을 낮추고 실사용 감각은 살렸습니다.
-                </p>
-              </div>
-
-              <div className="mt-8 grid gap-4 md:grid-cols-3">
-                {features.map((feature) => (
-                  <article key={feature.title} className="hairline-frame p-5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                      {feature.title}
-                    </p>
-                    <p className="mt-3 text-sm leading-7 text-[#c0c0ba]">
-                      {feature.body}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
-              <div className="surface-card mosaic p-6">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                  Meeting Script
-                </p>
-                <div className="mt-5 space-y-4 text-sm leading-7 text-[#b6b6b0]">
-                  <div className="hairline-frame p-4">
-                    <p className="text-white">“오늘 방향성 싱크 먼저 맞추고요.”</p>
-                    <p className="mt-2 text-[#72726d]">원문 그대로 통과</p>
-                  </div>
-                  <div className="hairline-frame p-4">
-                    <p className="text-white">“몰라요. 그냥 그렇게 하죠.”</p>
-                    <p className="mt-2 text-[#72726d]">
-                      즉시 음소거 후 교정 TTS 재생
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="surface-card p-6">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                  Hackathon Fit
-                </p>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <div className="data-card p-5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                      Credit Strategy
-                    </p>
-                    <p className="mt-3 text-sm leading-7 text-[#c7c7c1]">
-                      Cloud Run 단일 인스턴스와 TTS 호출만 사용해 5달러 크레딧
-                      안에서 시연 가능합니다.
-                    </p>
-                  </div>
-                  <div className="data-card p-5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                      Browser First
-                    </p>
-                    <p className="mt-3 text-sm leading-7 text-[#c7c7c1]">
-                      STT 미지원 환경에서는 수동 입력 콘솔로 바로 폴백됩니다.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <aside className="surface-card p-6 sm:p-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                  Enter Session
-                </p>
-                <h2 className="editorial-title mt-3 text-3xl text-white">
-                  바로 방을 열고
-                  <br />
-                  상대를 초대하세요
-                </h2>
-              </div>
-              <div className="scan-ring flex h-16 w-16 items-center justify-center rounded-full border border-[#c5ff00]/30 text-xs uppercase tracking-[0.18em] text-[#c5ff00]">
-                Live
-              </div>
-            </div>
-
-            <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-              <label className="block">
-                <span className="mb-3 block text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                  Display Name
-                </span>
-                <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="예: 김얼라인"
-                  className="w-full rounded-[22px] border border-white/8 bg-[#080808] px-5 py-4 text-base text-white outline-none focus:border-[#c5ff00]/40"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-3 block text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                  Room Code
-                </span>
-                <div className="flex gap-3">
-                  <input
-                    value={roomCode}
-                    onChange={(event) => setRoomCode(event.target.value)}
-                    className="min-w-0 flex-1 rounded-[22px] border border-white/8 bg-[#080808] px-5 py-4 text-base tracking-[0.22em] text-white outline-none focus:border-[#c5ff00]/40"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setRoomCode(createRoomCode())}
-                    className="capsule-button capsule-button-secondary px-4 text-sm"
-                  >
-                    재생성
-                  </button>
-                </div>
-              </label>
-
-              <button
-                type="submit"
-                disabled={!name.trim() || !roomCode.trim()}
-                className="capsule-button capsule-button-primary w-full text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                회의방 입장
-              </button>
-            </form>
-
-            <div className="mt-8 space-y-4 border-t border-white/8 pt-6">
-              <div className="flex items-start gap-3">
-                <div className="status-dot mt-2 shrink-0" />
-                <p className="text-sm leading-7 text-[#b8b8b1]">
-                  참여자는 동일한 방 코드로 접속하면 자동으로 1:1 WebRTC 연결을
-                  시도합니다.
-                </p>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="status-dot mt-2 shrink-0" />
-                <p className="text-sm leading-7 text-[#b8b8b1]">
-                  Chrome에서 카메라와 마이크를 허용하면 실시간 STT가 활성화됩니다.
-                </p>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="status-dot mt-2 shrink-0" />
-                <p className="text-sm leading-7 text-[#b8b8b1]">
-                  GCP TTS가 없더라도 브라우저 음성 합성으로 데모를 이어갈 수
-                  있습니다.
-                </p>
-              </div>
-            </div>
-          </aside>
-        </section>
-      </div>
+    <main className="min-h-screen bg-black text-white">
+      {stage === "landing" ? <LandingHero onStart={moveToGuide} /> : null}
+      {stage === "guide" ? <GuidelineStage onNext={moveToLobby} /> : null}
+      {stage === "lobby" ? (
+        <LobbyStage
+          roomCode={roomCode}
+          onRoomCodeChange={(value) => setRoomCode(value.toUpperCase())}
+          onSubmit={handleRoomJoin}
+        />
+      ) : null}
     </main>
   );
 }

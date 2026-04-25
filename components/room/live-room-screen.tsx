@@ -1,7 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  type RefObject,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
+  ArrowRightIcon,
+  CameraIcon,
+  CameraOffIcon,
+  ChartIcon,
+  CheckCircleIcon,
+  ExitDoorIcon,
+  HelpCircleIcon,
+  HistoryIcon,
+  MicIcon,
+  MicOffIcon,
+  RecordDotIcon,
+  SegmentIcon,
+  SettingsIcon,
+  SparkIcon,
+} from "@/components/shared/align-icons";
 import type {
   JoinRoomResponse,
   ModerationState,
@@ -26,6 +52,8 @@ type RecognitionState =
   | "blocked"
   | "unsupported";
 
+type PanelView = "logs" | "metrics";
+
 interface LiveRoomScreenProps {
   roomId: string;
   participantName: string;
@@ -44,6 +72,30 @@ function formatTime(dateValue: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatRoomLabel(roomId: string) {
+  const compact = roomId.replace(/[^a-z0-9]/gi, "").toUpperCase();
+
+  if (compact.length >= 6) {
+    return `${compact.slice(0, 3)}-${compact.slice(3, 6)}`;
+  }
+
+  return roomId.toUpperCase();
+}
+
+function formatMonitorParticipantName(name: string) {
+  const normalized = name.trim().toUpperCase();
+
+  if (normalized.startsWith("USER_")) {
+    return normalized.replace(/^USER_/, "대상자_");
+  }
+
+  if (normalized === "REMOTE_PGY") {
+    return "원격_참가자";
+  }
+
+  return normalized;
 }
 
 function isModerationActive(moderation: ModerationState | null) {
@@ -71,14 +123,331 @@ async function parseJson<T>(response: Response) {
   return (await response.json()) as T;
 }
 
+function getCallStatusLabel(status: "waiting" | "connecting" | "live") {
+  if (status === "live") {
+    return "LIVE_SYNC";
+  }
+
+  if (status === "connecting") {
+    return "HANDSHAKING";
+  }
+
+  return "WAITING";
+}
+
+function getRecognitionLabel(state: RecognitionState) {
+  if (state === "listening") {
+    return "라이브 감시 중";
+  }
+
+  if (state === "unsupported") {
+    return "수동 입력 중";
+  }
+
+  if (state === "blocked") {
+    return "접근 차단";
+  }
+
+  if (state === "ready") {
+    return "대기 중";
+  }
+
+  return "감시 준비 중";
+}
+
+function getBootstrapLabel(state: BootstrapState) {
+  if (state === "requesting-media") {
+    return "MEDIA";
+  }
+
+  if (state === "joining-room") {
+    return "JOIN";
+  }
+
+  if (state === "ready") {
+    return "READY";
+  }
+
+  if (state === "failed") {
+    return "ERROR";
+  }
+
+  return "BOOT";
+}
+
+function getEntryLabel(entry: SpeechLogEntry) {
+  if (entry.status === "blocked") {
+    return "VIBE MISMATCH";
+  }
+
+  if (entry.pangyoScore >= 60) {
+    return "PANGYO-STYLE MATCH";
+  }
+
+  return "STANDARD SYNTAX";
+}
+
+function getEntryTone(entry: SpeechLogEntry) {
+  if (entry.status === "blocked") {
+    return {
+      accent: "border-[#ffb9c1]/70",
+      name: "text-[#ffb9c1]",
+      text: "text-white",
+      label: "text-[#ffb9c1]",
+      icon: "text-[#ffb9c1]",
+    };
+  }
+
+  if (entry.pangyoScore >= 60) {
+    return {
+      accent: "border-[var(--align-accent)]",
+      name: "text-[var(--align-accent)]",
+      text: "text-white",
+      label: "text-[var(--align-accent)]",
+      icon: "text-[var(--align-accent)]",
+    };
+  }
+
+  return {
+    accent: "border-transparent",
+    name: "text-[#9d9d9d]",
+    text: "text-[#c5c5c5]",
+    label: "text-[#6f6f6f]",
+    icon: "text-[#6f6f6f]",
+  };
+}
+
+interface TopIconButtonProps {
+  label: string;
+  children: ReactNode;
+}
+
+function TopIconButton({ label, children }: TopIconButtonProps) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className="flex h-8 w-8 items-center justify-center text-white transition-colors duration-150 hover:text-[var(--align-accent)]"
+    >
+      {children}
+    </button>
+  );
+}
+
+interface VideoTileProps {
+  videoRef?: RefObject<HTMLVideoElement | null>;
+  showVideo: boolean;
+  muted?: boolean;
+  grayscale?: boolean;
+  title: string;
+  badge: string;
+  badgeActive: boolean;
+  centerContent?: ReactNode;
+  footerStatus: string;
+  footerTone?: "accent" | "muted";
+  showSignalBars?: boolean;
+}
+
+function VideoTile({
+  videoRef,
+  showVideo,
+  muted,
+  grayscale,
+  title,
+  badge,
+  badgeActive,
+  centerContent,
+  footerStatus,
+  footerTone = "muted",
+  showSignalBars = false,
+}: VideoTileProps) {
+  return (
+    <article className="relative min-h-[440px] overflow-hidden border border-white/10 bg-[#0b0b0b] sm:min-h-[560px]">
+      {videoRef ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted={muted}
+          playsInline
+          className={`absolute inset-0 h-full w-full object-cover ${
+            showVideo ? "opacity-100" : "opacity-0"
+          } ${grayscale ? "grayscale" : ""}`}
+        />
+      ) : null}
+
+      {!showVideo ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#111111] p-8 text-center">
+          {centerContent}
+        </div>
+      ) : null}
+
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
+
+      <div className="absolute bottom-5 left-5 flex items-center gap-4">
+        <div className="flex items-center gap-2 border border-white/18 bg-black/75 px-4 py-2">
+          <div
+            className={`h-2 w-2 ${
+              badgeActive ? "bg-[var(--align-accent)]" : "bg-[#535353]"
+            }`}
+          />
+          <span className="font-mono text-[0.72rem] uppercase tracking-[0.26em] text-white/92">
+            {badge}
+          </span>
+        </div>
+      </div>
+
+      {showSignalBars ? (
+        <div className="absolute bottom-5 right-5 text-[var(--align-accent)]">
+          <div className="signal-bars">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="pointer-events-none absolute left-5 top-5">
+        <p
+          className={`font-mono text-[0.7rem] uppercase tracking-[0.22em] ${
+            footerTone === "accent" ? "text-[var(--align-accent)]" : "text-[#8a8a8a]"
+          }`}
+        >
+          {title}
+        </p>
+        <p className="mt-2 font-mono text-[0.68rem] uppercase tracking-[0.26em] text-white/60">
+          {footerStatus}
+        </p>
+      </div>
+    </article>
+  );
+}
+
+interface MetricCardProps {
+  label: string;
+  value: string;
+}
+
+function MetricCard({ label, value }: MetricCardProps) {
+  return (
+    <article className="border border-white/10 bg-[#111111] p-4">
+      <p className="font-mono text-[0.68rem] uppercase tracking-[0.24em] text-[#7a7a7a]">
+        {label}
+      </p>
+      <p className="mt-4 text-[1.15rem] font-semibold uppercase tracking-[0.06em] text-white">
+        {value}
+      </p>
+    </article>
+  );
+}
+
+interface BottomControlButtonProps {
+  label: string;
+  active: boolean;
+  tone?: "default" | "danger";
+  onClick: () => void;
+  children: ReactNode;
+}
+
+function BottomControlButton({
+  label,
+  active,
+  tone = "default",
+  onClick,
+  children,
+}: BottomControlButtonProps) {
+  const activeClasses =
+    tone === "danger"
+      ? "border-t-[#ff5959] text-[#ff6f6f]"
+      : "border-t-[var(--align-accent)] bg-[#161616] text-[var(--align-accent)]";
+
+  const idleClasses =
+    tone === "danger"
+      ? "border-t-transparent text-[#ff6f6f]/80 hover:text-[#ff6f6f]"
+      : "border-t-transparent text-white hover:bg-[#111111] hover:text-white";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex h-full min-w-[74px] flex-col items-center justify-center border-t-2 px-3 pt-2 text-[0.68rem] font-semibold uppercase tracking-[0.24em] transition-colors duration-150 sm:min-w-[92px] ${
+        active ? activeClasses : idleClasses
+      }`}
+    >
+      <span className="mb-2 flex h-6 items-center justify-center">{children}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+interface AlertOverlayProps {
+  moderation: ModerationState;
+}
+
+function AlertOverlay({ moderation }: AlertOverlayProps) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/86 px-6 py-24 backdrop-blur-[3px]">
+      <div className="relative w-full max-w-[1000px] border border-white/85 bg-[#171717] px-7 py-8 sm:px-12 sm:py-12">
+        <div className="absolute inset-x-0 top-0 h-1 bg-[var(--align-error-strong)]" />
+
+        <div className="inline-flex items-center gap-3 border border-[var(--align-error-strong)] px-4 py-3 text-[0.78rem] font-semibold uppercase tracking-[0.22em] text-[var(--align-error-strong)]">
+          <MicOffIcon className="h-4 w-4" />
+          <span>강제 마이크 차단 중</span>
+        </div>
+
+        <h2 className="mt-8 text-[clamp(3rem,6vw,5.75rem)] font-black uppercase leading-[0.94] tracking-[-0.06em] text-white">
+          조직 싱크 치명적 오류
+        </h2>
+
+        <div className="mt-10 border-l border-white/12 pl-5 sm:pl-10">
+          <div className="pb-8">
+            <p className="flex items-center gap-2 font-mono text-[0.82rem] font-semibold uppercase tracking-[0.24em] text-[#c2c7aa]">
+              <HistoryIcon className="h-4 w-4" />
+              <span>비-판교어 발화 원문</span>
+            </p>
+            <p className="mt-5 text-[1.3rem] italic tracking-[-0.02em] text-[#bfc2af] sm:text-[1.65rem]">
+              “{moderation.originalText}”
+            </p>
+          </div>
+
+          <div className="relative border-t border-white/10 pt-8">
+            <div className="absolute left-[-21px] top-8 bottom-0 w-[3px] bg-[var(--align-accent)] sm:left-[-41px]" />
+            <p className="flex items-center gap-2 font-mono text-[0.82rem] font-semibold uppercase tracking-[0.24em] text-[var(--align-accent)]">
+              <SparkIcon className="h-4 w-4" />
+              <span>판교핏(Fit) 얼라인 완료</span>
+            </p>
+            <p className="mt-5 max-w-4xl text-[1.65rem] font-semibold leading-[1.45] tracking-[-0.04em] text-[var(--align-accent)] sm:text-[2.2rem]">
+              “{moderation.replacementText}”
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-10 flex items-center gap-4 border-t border-white/10 pt-6">
+          <div className="signal-bars text-[var(--align-accent)]">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <p className="text-[0.9rem] tracking-[0.08em] text-white/88 sm:tracking-[0.12em]">
+            상대방에게 최적화된 아젠다 대독 중...
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LiveRoomScreen({
   roomId,
   participantName,
 }: LiveRoomScreenProps) {
+  const router = useRouter();
   const [participantId] = useState(() => createParticipantId());
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>("booting");
   const [recognitionState, setRecognitionState] =
     useState<RecognitionState>("checking");
+  const [panelView, setPanelView] = useState<PanelView>("logs");
   const [errorMessage, setErrorMessage] = useState("");
   const [participants, setParticipants] = useState<RoomParticipant[]>([]);
   const [logs, setLogs] = useState<SpeechLogEntry[]>([]);
@@ -114,6 +483,9 @@ export function LiveRoomScreen({
   const activeModeration = isModerationActive(moderation) ? moderation : null;
   const forcedMuted = Boolean(activeModeration);
   const effectiveMicEnabled = microphoneEnabled && !forcedMuted;
+  const deferredInterimTranscript = useDeferredValue(interimTranscript);
+  const showManualFallback =
+    recognitionState === "unsupported" || recognitionState === "blocked";
 
   const currentParticipant = useMemo(() => {
     return participants.find((participant) => participant.id === participantId) ?? null;
@@ -122,16 +494,24 @@ export function LiveRoomScreen({
   const remoteParticipant = useMemo(() => {
     return participants.find((participant) => participant.id !== participantId) ?? null;
   }, [participantId, participants]);
-  const displayCallStatus = remoteParticipant ? callStatus : "waiting";
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const displayCallStatus = remoteParticipant ? callStatus : "waiting";
+  const roomLabel = formatRoomLabel(roomId);
+  const resolvedParticipantName = participantName.trim();
+
+  useEffect(() => {
+    if (resolvedParticipantName) {
+      window.localStorage.setItem("align-display-name", resolvedParticipantName);
+    }
+  }, [resolvedParticipantName]);
+
   useEffect(() => {
     remoteParticipantIdRef.current = remoteParticipant?.id ?? null;
   }, [remoteParticipant]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // The room bootstrap sequence intentionally runs once per participant/session.
   useEffect(() => {
-    if (!participantName.trim()) {
+    if (!resolvedParticipantName.trim()) {
       return;
     }
 
@@ -175,7 +555,7 @@ export function LiveRoomScreen({
           },
           body: JSON.stringify({
             participantId,
-            participantName,
+            participantName: resolvedParticipantName,
           }),
         });
 
@@ -213,9 +593,8 @@ export function LiveRoomScreen({
     return () => {
       disposed = true;
     };
-  }, [participantId, participantName, roomId]);
+  }, [participantId, resolvedParticipantName, roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!localStreamRef.current) {
       return;
@@ -229,14 +608,12 @@ export function LiveRoomScreen({
     });
   }, [cameraEnabled, effectiveMicEnabled]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.muted = forcedMuted;
     }
   }, [forcedMuted]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!activeModeration) {
       return;
@@ -287,6 +664,7 @@ export function LiveRoomScreen({
     playBrowserTts(activeModeration.replacementText);
   }, [activeModeration]);
 
+  // Recognition start/stop is coordinated by the surrounding room state machine.
   useEffect(() => {
     if (
       bootstrapState !== "ready" ||
@@ -307,22 +685,18 @@ export function LiveRoomScreen({
     return () => {
       stopRecognition();
     };
-  }, [
-    bootstrapState,
-    forcedMuted,
-    microphoneEnabled,
-    monitoringEnabled,
-    recognitionState,
-  ]);
+  }, [bootstrapState, forcedMuted, microphoneEnabled, monitoringEnabled, recognitionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Device sync is fire-and-forget and should not retrigger from recreated helpers.
   useEffect(() => {
     if (bootstrapState !== "ready") {
       return;
     }
 
     void syncDeviceState();
-  }, [bootstrapState, cameraEnabled, microphoneEnabled]);
+  }, [bootstrapState, cameraEnabled, microphoneEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Offer negotiation reacts to role/participant changes, not helper identity changes.
   useEffect(() => {
     if (bootstrapState !== "ready") {
       return;
@@ -336,8 +710,9 @@ export function LiveRoomScreen({
     if (role === "host") {
       void initiateOffer();
     }
-  }, [bootstrapState, remoteParticipant, role]);
+  }, [bootstrapState, remoteParticipant, role]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cleanup should use the current refs when the room unmounts.
   useEffect(() => {
     return () => {
       isUnmountingRef.current = true;
@@ -361,7 +736,7 @@ export function LiveRoomScreen({
         });
       }
     };
-  }, [participantId, roomId]);
+  }, [participantId, roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function playBrowserTts(text: string) {
     if (!("speechSynthesis" in window)) {
@@ -758,7 +1133,7 @@ export function LiveRoomScreen({
         },
         body: JSON.stringify({
           participantId,
-          speakerName: participantName,
+          speakerName: resolvedParticipantName,
           transcript: normalizedTranscript,
         }),
       });
@@ -779,9 +1154,7 @@ export function LiveRoomScreen({
     }
   }
 
-  async function handleManualTranscriptSubmit(
-    event: React.FormEvent<HTMLFormElement>,
-  ) {
+  async function handleManualTranscriptSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!manualTranscript.trim()) {
@@ -793,467 +1166,419 @@ export function LiveRoomScreen({
     setLastTranscriptAt(new Date().toISOString());
   }
 
-  if (!participantName.trim()) {
+  const localPanelName = formatMonitorParticipantName(
+    currentParticipant?.name ?? resolvedParticipantName,
+  );
+  const remotePanelName = formatMonitorParticipantName(
+    remoteParticipant?.name ?? "REMOTE_PGY",
+  );
+  const liveListeningCopy = deferredInterimTranscript
+    ? deferredInterimTranscript
+    : recognitionState === "listening"
+      ? "비즈니스 임팩트를 측정할 다음 발화를 기다리는 중..."
+      : "다음 문장이 들어오면 톤 앤 매너 기준으로 즉시 분석합니다.";
+
+  if (!resolvedParticipantName.trim()) {
     return (
-      <main className="align-shell min-h-screen px-4 py-4 sm:px-6">
-        <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-[1100px] items-center justify-center rounded-[40px] border border-white/8 bg-black p-6">
-          <div className="surface-card max-w-xl p-8 text-center">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-              Invalid Access
-            </p>
-            <h1 className="editorial-title mt-4 text-4xl text-white">
-              참가자 이름이 빠져 있습니다.
-            </h1>
-            <p className="mt-4 text-sm leading-7 text-[#b9b9b2]">
-              첫 화면으로 돌아가 이름과 방 코드를 다시 입력해주세요.
-            </p>
-            <Link
-              href="/"
-              className="capsule-button capsule-button-primary mt-8 text-sm font-semibold"
-            >
-              홈으로 돌아가기
-            </Link>
-          </div>
+      <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
+        <div className="border border-white/12 bg-[#101010] px-8 py-8 text-center">
+          <p className="font-mono text-[0.8rem] uppercase tracking-[0.24em] text-[#7a7a7a]">
+            INITIALIZING SESSION
+          </p>
+          <p className="mt-4 text-lg tracking-[-0.03em] text-white">
+            participant identity is syncing...
+          </p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="align-shell motion-safe min-h-screen px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-[1550px] flex-col rounded-[40px] border border-white/8 bg-black px-5 py-5 sm:px-8 sm:py-8">
-        <header className="neon-line flex flex-col gap-6 border-b border-white/8 pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <span className="align-badge">Room {roomId}</span>
-            <div>
-              <h1 className="editorial-title text-4xl text-white sm:text-5xl lg:text-6xl">
-                회의 톤이 무너지면
-                <br />
-                Align.ai가 바로 개입합니다
-              </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-[#afafa8] sm:text-base">
-                현재 방에 접속한 두 명의 음성을 기준으로 WebRTC 연결과 판교어
-                모더레이션이 동시에 돌아갑니다. 상대와 연결되면 바로 대화를
-                시작하면 됩니다.
-              </p>
-            </div>
-          </div>
+    <>
+      <main className="min-h-screen bg-black text-white">
+        <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-black px-4 sm:px-8 xl:px-12">
+          <Link
+            href="/"
+            className="text-[1.8rem] font-black uppercase tracking-[0.12em] text-[var(--align-accent)] sm:text-[2rem]"
+          >
+            ALIGN.AI
+          </Link>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="data-card min-w-[140px] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                Call
-              </p>
-              <p className="mt-3 text-xl font-semibold text-white">
-                {displayCallStatus === "live"
-                  ? "Connected"
-                  : displayCallStatus === "connecting"
-                    ? "Handshaking"
-                    : "Waiting"}
-              </p>
-            </div>
-            <div className="data-card min-w-[140px] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                STT
-              </p>
-              <p className="mt-3 text-xl font-semibold text-white">
-                {recognitionState === "listening"
-                  ? "Active"
-                  : recognitionState === "unsupported"
-                    ? "Fallback"
-                    : recognitionState === "blocked"
-                      ? "Denied"
-                      : "Ready"}
-              </p>
-            </div>
-            <div className="data-card min-w-[140px] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                Role
-              </p>
-              <p className="mt-3 text-xl font-semibold uppercase text-white">
-                {role ?? "Booting"}
-              </p>
+          <div className="flex items-center gap-3 sm:gap-6">
+            <span className="font-mono text-[0.72rem] uppercase tracking-[0.26em] text-white/92 sm:text-[0.82rem]">
+              ROOM: {roomLabel}
+            </span>
+            <div className="flex items-center gap-1 sm:gap-2">
+              <TopIconButton label="Settings">
+                <SettingsIcon className="h-4 w-4" />
+              </TopIconButton>
+              <TopIconButton label="Help">
+                <HelpCircleIcon className="h-4 w-4" />
+              </TopIconButton>
             </div>
           </div>
         </header>
 
-        {forcedMuted && activeModeration ? (
-          <section className="slide-up surface-card signal-pulse mt-6 border-[#c5ff00]/30 bg-[#0a0a07] p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="max-w-4xl">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#c5ff00]">
-                  Moderation Active
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold text-white">
-                  {activeModeration.warning}
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[#bdbdb7]">
-                  {activeModeration.sourceParticipantName}님의 발화{" "}
-                  <span className="text-white">
-                    “{activeModeration.originalText}”
-                  </span>
-                  가 차단되었습니다. 시스템이 교정 문장을 TTS로 재생하는 동안
-                  참가자 전체가 잠시 음소거됩니다.
-                </p>
-              </div>
-              <div className="max-w-lg rounded-[24px] border border-[#c5ff00]/20 bg-[#080808] px-5 py-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                  Replacement
-                </p>
-                <p className="mt-3 text-sm leading-7 text-white">
-                  {activeModeration.replacementText}
-                </p>
-              </div>
+        <div className="pb-24 pt-16 xl:pr-[360px]">
+          <section className="border-b border-white/10 xl:border-b-0">
+            <div className="grid gap-6 px-4 py-6 sm:px-8 xl:h-[calc(100vh-9rem)] xl:grid-cols-2 xl:px-12 xl:py-10">
+              <VideoTile
+                videoRef={localVideoRef}
+                showVideo={cameraEnabled}
+                muted
+                title={`${localPanelName} (LOCAL)`}
+                badge={`${localPanelName} (LOCAL)`}
+                badgeActive
+                footerStatus={effectiveMicEnabled ? "VOICE CHANNEL OPEN" : "MIC MUTED"}
+                footerTone={effectiveMicEnabled ? "accent" : "muted"}
+                centerContent={
+                  <div>
+                    <CameraOffIcon className="mx-auto h-14 w-14 text-[#525252]" />
+                    <p className="mt-5 font-mono text-[0.85rem] uppercase tracking-[0.22em] text-[#727272]">
+                      CAMERA INACTIVE
+                    </p>
+                  </div>
+                }
+              />
+
+              <VideoTile
+                videoRef={remoteVideoRef}
+                showVideo={Boolean(remoteParticipant) && displayCallStatus === "live"}
+                grayscale
+                title={remotePanelName}
+                badge={remotePanelName}
+                badgeActive={displayCallStatus === "live"}
+                footerStatus={
+                  displayCallStatus === "live"
+                    ? "REMOTE CHANNEL SYNCED"
+                    : "원격 참가자 대기 중"
+                }
+                showSignalBars={displayCallStatus === "live"}
+                centerContent={
+                  <div>
+                    <p className="font-mono text-[0.82rem] uppercase tracking-[0.26em] text-[#7b7b7b]">
+                      {displayCallStatus === "connecting"
+                        ? "HANDSHAKING REMOTE FEED"
+                        : "WAITING FOR REMOTE_PGY"}
+                    </p>
+                  </div>
+                }
+              />
             </div>
           </section>
-        ) : null}
 
-        <section className="grid flex-1 gap-6 py-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="space-y-6">
-            <div className="surface-card p-5 sm:p-6">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                    Participants
-                  </p>
-                  <h2 className="editorial-title mt-3 text-3xl text-white">
-                    1:1 비디오 스테이지
-                  </h2>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMicrophoneEnabled((current) => !current)}
-                    className={`capsule-button text-sm ${
-                      microphoneEnabled
-                        ? "capsule-button-primary"
-                        : "capsule-button-secondary"
-                    }`}
-                  >
-                    Mic {microphoneEnabled ? "On" : "Off"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCameraEnabled((current) => !current)}
-                    className={`capsule-button text-sm ${
-                      cameraEnabled
-                        ? "capsule-button-primary"
-                        : "capsule-button-secondary"
-                    }`}
-                  >
-                    Cam {cameraEnabled ? "On" : "Off"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMonitoringEnabled((current) => !current)}
-                    className={`capsule-button text-sm ${
-                      monitoringEnabled
-                        ? "capsule-button-primary"
-                        : "capsule-button-secondary"
-                    }`}
-                  >
-                    STT {monitoringEnabled ? "On" : "Off"}
-                  </button>
+          <aside className="border-t border-white/10 bg-[#1a1a1a] xl:fixed xl:right-0 xl:top-16 xl:bottom-20 xl:w-[360px] xl:border-l xl:border-t-0">
+            <div className="flex h-full flex-col">
+              <div className="border-b border-white/10 px-6 py-8">
+                <h2 className="font-mono text-[0.9rem] font-semibold uppercase tracking-[0.24em] text-[var(--align-accent)]">
+                  톤 앤 매너 감시기
+                </h2>
+                <div className="mt-5 flex items-center gap-3">
+                  <div className="status-square h-3 w-3 bg-[var(--align-accent)]" />
+                  <span className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-white/92">
+                    {forcedMuted ? "강제 정렬 진행 중" : "라이브 감시 중"}
+                  </span>
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                <article className="video-panel">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    className={cameraEnabled ? "" : "opacity-10"}
-                  />
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black via-black/40 to-transparent px-4 py-4">
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {currentParticipant?.name ?? participantName} (나)
-                      </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8b8b84]">
-                        {microphoneEnabled ? "Mic live" : "Mic off"} /{" "}
-                        {cameraEnabled ? "Cam live" : "Cam off"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-1.5 text-xs uppercase tracking-[0.16em] text-[#c5ff00]">
-                      <span className="status-dot" />
-                      Local
-                    </div>
-                  </div>
-                  {!cameraEnabled ? (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm uppercase tracking-[0.22em] text-[#7f7f79]">
-                      Camera disabled
-                    </div>
-                  ) : null}
-                </article>
+              <div className="border-b border-white/10 py-5">
+                <button
+                  type="button"
+                  onClick={() => setPanelView("logs")}
+                  className={`flex w-full items-center gap-3 border-l-2 py-2 pl-4 text-left font-mono text-[0.8rem] uppercase tracking-[0.2em] transition-colors ${
+                    panelView === "logs"
+                      ? "border-[var(--align-accent)] text-[var(--align-accent)]"
+                      : "border-transparent text-[#707070] hover:text-white"
+                  }`}
+                >
+                  <SegmentIcon className="h-4 w-4" />
+                  <span>적발 내역</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanelView("metrics")}
+                  className={`mt-2 flex w-full items-center gap-3 border-l-2 py-2 pl-4 text-left font-mono text-[0.8rem] uppercase tracking-[0.2em] transition-colors ${
+                    panelView === "metrics"
+                      ? "border-[var(--align-accent)] text-[var(--align-accent)]"
+                      : "border-transparent text-[#707070] hover:text-white"
+                  }`}
+                >
+                  <ChartIcon className="h-4 w-4" />
+                  <span>실시간 VIBE 스코어</span>
+                </button>
+              </div>
 
-                <article className="video-panel">
-                  {remoteParticipant ? (
-                    <>
-                      <video ref={remoteVideoRef} autoPlay playsInline />
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black via-black/40 to-transparent px-4 py-4">
-                        <div>
-                          <p className="text-sm font-semibold text-white">
-                            {remoteParticipant.name}
-                          </p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8b8b84]">
-                            {displayCallStatus === "live" ? "Call live" : "Awaiting media"}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-1.5 text-xs uppercase tracking-[0.16em] text-[#c5ff00]">
-                          <span className="status-dot" />
-                          Remote
-                        </div>
+              <div className="room-scroll flex-1 overflow-y-auto">
+                {panelView === "logs" ? (
+                  <div className="flex flex-col gap-8 px-6 py-8">
+                    <section className="border-l-2 border-[var(--align-accent)] pl-4">
+                      <div className="flex items-end justify-between gap-4">
+                        <span className="font-mono text-[0.78rem] uppercase tracking-[0.22em] text-[var(--align-accent)]">
+                          {localPanelName}
+                        </span>
+                        <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[#666666]">
+                          {lastTranscriptAt ? formatTime(lastTranscriptAt) : "--:--"}
+                        </span>
                       </div>
-                    </>
-                  ) : (
-                    <div className="video-panel-empty px-8">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.22em] text-[#7d7d77]">
-                          Waiting
+                      <p className="mt-4 text-[1rem] leading-8 tracking-[-0.02em] text-white">
+                        {liveListeningCopy}
+                      </p>
+                      <div className="mt-4 flex items-center gap-2">
+                        <CheckCircleIcon className="h-3.5 w-3.5 text-[var(--align-accent)]" />
+                        <span className="font-mono text-[0.62rem] uppercase tracking-[0.2em] text-[var(--align-accent)]">
+                          실시간 문맥 분석 중
+                        </span>
+                      </div>
+                    </section>
+
+                    {showManualFallback ? (
+                      <section className="border border-white/10 bg-[#101010] p-4">
+                        <p className="font-mono text-[0.7rem] uppercase tracking-[0.22em] text-[#d1d5b4]">
+                          MANUAL INPUT ENABLED
                         </p>
-                        <p className="mt-3 text-lg font-semibold text-white">
-                          같은 방 코드로 다른 참가자가 들어오면
-                          <br />
-                          자동으로 연결을 시작합니다.
+                        <p className="mt-3 text-sm leading-7 text-[#b9b9b9]">
+                          Browser speech recognition is unavailable, so this room
+                          is listening through text relay instead.
+                        </p>
+                        <form
+                          className="mt-4 space-y-3"
+                          onSubmit={handleManualTranscriptSubmit}
+                        >
+                          <textarea
+                            rows={4}
+                            value={manualTranscript}
+                            onChange={(event) =>
+                              setManualTranscript(event.target.value)
+                            }
+                            placeholder="Type the next line to submit it into the speech monitor."
+                            className="w-full resize-none border border-white/10 bg-black px-4 py-3 text-sm leading-7 text-white outline-none transition-colors focus:border-[var(--align-accent)]"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!manualTranscript.trim() || forcedMuted}
+                            className="inline-flex items-center gap-2 bg-[var(--align-accent)] px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-black transition duration-150 hover:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <span>SUBMIT TRANSCRIPT</span>
+                            <ArrowRightIcon className="h-3.5 w-3.5" />
+                          </button>
+                        </form>
+                      </section>
+                    ) : null}
+
+                    {logs.length === 0 ? (
+                      <div className="border border-white/10 bg-[#101010] p-5">
+                        <p className="font-mono text-[0.72rem] uppercase tracking-[0.2em] text-[#777777]">
+                          아직 싱크된 아젠다가 없습니다
+                        </p>
+                        <p className="mt-4 text-sm leading-7 text-[#b8b8b8]">
+                          대화가 시작되는 즉시, 모든 문장의 효율성과 허세 농도를
+                          분석하여 이 공간에 강제 기록합니다.
                         </p>
                       </div>
-                    </div>
-                  )}
-                </article>
-              </div>
-            </div>
+                    ) : (
+                      logs.map((entry) => {
+                        const tone = getEntryTone(entry);
 
-            <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-              <div className="surface-card p-5 sm:p-6">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                  Live Transcript
-                </p>
-                <div className="mt-5 space-y-4">
-                  <div className="hairline-frame min-h-[160px] p-5">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                      Interim
-                    </p>
-                    <p className="mt-4 text-base leading-8 text-white">
-                      {interimTranscript || "실시간 듣기 중인 문장이 여기에 표시됩니다."}
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="data-card p-4">
-                      <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                        Last Capture
-                      </p>
-                      <p className="mt-3 text-lg font-semibold text-white">
-                        {lastTranscriptAt ? formatTime(lastTranscriptAt) : "Waiting"}
-                      </p>
-                    </div>
-                    <div className="data-card p-4">
-                      <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                        Participants
-                      </p>
-                      <p className="mt-3 text-lg font-semibold text-white">
-                        {participants.length} / 2
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                        return (
+                          <article
+                            key={entry.id}
+                            className={`border-l-2 pl-4 ${tone.accent}`}
+                          >
+                            <div className="flex items-end justify-between gap-4">
+                              <span
+                                className={`font-mono text-[0.78rem] uppercase tracking-[0.22em] ${tone.name}`}
+                              >
+                                {entry.speakerName}
+                              </span>
+                              <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[#666666]">
+                                {formatTime(entry.createdAt)}
+                              </span>
+                            </div>
 
-              <div className="surface-card p-5 sm:p-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                      Manual Fallback
-                    </p>
-                    <h2 className="mt-3 text-2xl font-semibold text-white">
-                      브라우저 STT가 불안정하면 여기서 직접 발화를 넣어도 됩니다.
-                    </h2>
-                  </div>
-                  <p className="max-w-xs text-xs leading-6 text-[#7d7d77]">
-                    Chrome 권한 이슈나 소음 환경에서는 이 입력창으로 데모를
-                    계속 진행할 수 있습니다.
-                  </p>
-                </div>
+                            <p
+                              className={`mt-4 text-[1rem] leading-8 tracking-[-0.02em] ${tone.text}`}
+                            >
+                              {entry.deliveredText}
+                            </p>
 
-                <form className="mt-6 space-y-4" onSubmit={handleManualTranscriptSubmit}>
-                  <textarea
-                    value={manualTranscript}
-                    onChange={(event) => setManualTranscript(event.target.value)}
-                    rows={5}
-                    placeholder="예: 오늘 아젠다 기준으로 오너십 얼라인 먼저 하고 액션 아이템까지 정리하겠습니다."
-                    className="w-full rounded-[24px] border border-white/8 bg-[#080808] px-5 py-4 text-base leading-8 text-white outline-none focus:border-[#c5ff00]/35"
-                  />
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm leading-7 text-[#8d8d86]">
-                      기준 미달 문장을 넣으면 즉시 방 전체에 제재가 발동합니다.
-                    </p>
-                    <button
-                      type="submit"
-                      disabled={!manualTranscript.trim() || forcedMuted}
-                      className="capsule-button capsule-button-primary text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      발화 송신
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-
-          <aside className="space-y-6">
-            <div className="surface-card p-5 sm:p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                    Ops Console
-                  </p>
-                  <h2 className="mt-3 text-3xl font-semibold text-white">
-                    모더레이션 관제
-                  </h2>
-                </div>
-                <div className="scan-ring flex h-14 w-14 items-center justify-center rounded-full border border-[#c5ff00]/30 text-[0.65rem] uppercase tracking-[0.18em] text-[#c5ff00]">
-                  Guard
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="data-card p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Boot
-                  </p>
-                  <p className="mt-3 text-lg font-semibold text-white">
-                    {bootstrapState === "requesting-media"
-                      ? "Media"
-                      : bootstrapState === "joining-room"
-                        ? "Join"
-                        : bootstrapState === "ready"
-                          ? "Ready"
-                          : bootstrapState === "failed"
-                            ? "Error"
-                            : "Boot"}
-                  </p>
-                </div>
-                <div className="data-card min-w-[140px] p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Voice Route
-                  </p>
-                  <p className="mt-3 text-lg font-semibold text-white">
-                    {activeModeration?.voiceSource === "gcp"
-                      ? "GCP TTS"
-                      : "Browser"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                <div className="hairline-frame p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                    STT Status
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-white">
-                    {recognitionState === "listening" &&
-                      "로컬 마이크 발화를 실시간으로 수집 중입니다."}
-                    {recognitionState === "ready" &&
-                      "브라우저 STT가 준비되어 있습니다. 말을 시작하면 자동 감지합니다."}
-                    {recognitionState === "unsupported" &&
-                      "이 브라우저는 STT를 지원하지 않습니다. 수동 입력 콘솔을 사용하세요."}
-                    {recognitionState === "blocked" &&
-                      "브라우저가 마이크 기반 STT 권한을 거부했습니다. 권한을 허용하거나 수동 입력으로 전환하세요."}
-                  </p>
-                </div>
-                <div className="hairline-frame p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                    Warning Rule
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-white">
-                    판교어 키워드가 부족하거나 “몰라요”, “못 해요”, “그냥” 같은
-                    표현이 감지되면 차단 후 교정 음성이 송출됩니다.
-                  </p>
-                </div>
-              </div>
-
-              {errorMessage ? (
-                <div className="mt-5 rounded-[22px] border border-white/10 bg-white/3 px-4 py-4 text-sm leading-7 text-[#ddddda]">
-                  {errorMessage}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="surface-card p-5 sm:p-6">
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#9f9f98]">
-                    Meeting Log
-                  </p>
-                  <h2 className="mt-3 text-3xl font-semibold text-white">
-                    발화 기록
-                  </h2>
-                </div>
-                <p className="text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                  newest first
-                </p>
-              </div>
-
-              <div className="scrollbar-thin mt-6 max-h-[720px] space-y-3 overflow-y-auto pr-1">
-                {logs.length === 0 ? (
-                  <div className="hairline-frame p-5 text-sm leading-7 text-[#989892]">
-                    아직 기록이 없습니다. STT를 켜고 말하거나 수동 입력으로 첫
-                    발화를 보내보세요.
+                            <div className="mt-4 flex items-center gap-2">
+                              <CheckCircleIcon className={`h-3.5 w-3.5 ${tone.icon}`} />
+                              <span
+                                className={`font-mono text-[0.62rem] uppercase tracking-[0.2em] ${tone.label}`}
+                              >
+                                {getEntryLabel(entry)}
+                              </span>
+                            </div>
+                          </article>
+                        );
+                      })
+                    )}
                   </div>
                 ) : (
-                  logs.map((entry) => (
-                    <article
-                      key={entry.id}
-                      className={`raise-in rounded-[24px] border p-5 ${
-                        entry.status === "blocked"
-                          ? "border-[#c5ff00]/28 bg-[#090a04]"
-                          : "border-white/8 bg-white/3"
-                      }`}
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-white">
-                            {entry.speakerName}
-                          </p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#7d7d77]">
-                            {formatTime(entry.createdAt)} / Score {entry.pangyoScore}
-                          </p>
-                        </div>
-                        <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1 text-[0.68rem] uppercase tracking-[0.16em] text-[#c5ff00]">
-                          {entry.status === "blocked" ? "Intervened" : "Passed"}
-                        </div>
-                      </div>
+                  <div className="space-y-8 px-6 py-8">
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                      <MetricCard
+                        label="CALL STATUS"
+                        value={getCallStatusLabel(displayCallStatus)}
+                      />
+                      <MetricCard
+                        label="BOOT STATUS"
+                        value={getBootstrapLabel(bootstrapState)}
+                      />
+                      <MetricCard
+                        label="SPEECH INPUT"
+                        value={getRecognitionLabel(recognitionState)}
+                      />
+                      <MetricCard
+                        label="ROOM ROLE"
+                        value={(role ?? "BOOTING").toUpperCase()}
+                      />
+                      <MetricCard
+                        label="VOICE ROUTE"
+                        value={activeModeration?.voiceSource === "gcp" ? "GCP TTS" : "BROWSER"}
+                      />
+                    </div>
 
-                      <div className="mt-4 grid gap-3">
-                        <div className="hairline-frame bg-black/25 p-4">
-                          <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#7d7d77]">
-                            Original
+                    <section className="border border-white/10 bg-[#111111] p-5">
+                      <p className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[#7a7a7a]">
+                        SESSION SNAPSHOT
+                      </p>
+                      <div className="mt-5 space-y-5">
+                        <div className="border-l border-white/10 pl-4">
+                          <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-[#7a7a7a]">
+                            PARTICIPANTS
                           </p>
-                          <p className="mt-2 text-sm leading-7 text-white">
-                            {entry.originalText}
-                          </p>
-                        </div>
-                        <div className="hairline-frame bg-black/35 p-4">
-                          <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[#7d7d77]">
-                            Delivered
-                          </p>
-                          <p className="mt-2 text-sm leading-7 text-white">
-                            {entry.deliveredText}
+                          <p className="mt-3 text-lg font-semibold tracking-[0.04em] text-white">
+                            {participants.length} / 2
                           </p>
                         </div>
-                        <p className="text-sm leading-7 text-[#8b8b85]">
-                          {entry.reason}
-                        </p>
+                        <div className="border-l border-white/10 pl-4">
+                          <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-[#7a7a7a]">
+                            LAST CAPTURE
+                          </p>
+                          <p className="mt-3 text-lg font-semibold tracking-[0.04em] text-white">
+                            {lastTranscriptAt ? formatTime(lastTranscriptAt) : "WAITING"}
+                          </p>
+                        </div>
+                        <div className="border-l border-white/10 pl-4">
+                          <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-[#7a7a7a]">
+                            ALIGNMENT RULESET
+                          </p>
+                          <p className="mt-3 text-sm leading-7 text-[#b9b9b9]">
+                            Non-Pangyo phrasing such as direct refusals or flat
+                            low-context statements will trigger forced muting and
+                            AI TTS replacement.
+                          </p>
+                        </div>
+                        <div className="border-l border-[var(--align-accent)] pl-4">
+                          <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-[var(--align-accent)]">
+                            ACTIVE MODERATION
+                          </p>
+                          <p className="mt-3 text-sm leading-7 text-white">
+                            {activeModeration
+                              ? activeModeration.replacementText
+                              : "No intervention is currently blocking the room."}
+                          </p>
+                        </div>
                       </div>
-                    </article>
-                  ))
+                    </section>
+
+                    {errorMessage ? (
+                      <section className="border border-[var(--align-error-strong)] bg-[#1b1214] p-5">
+                        <p className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[var(--align-error-strong)]">
+                          SYSTEM ALERT
+                        </p>
+                        <p className="mt-4 text-sm leading-7 text-white">
+                          {errorMessage}
+                        </p>
+                      </section>
+                    ) : null}
+
+                    {showManualFallback ? (
+                      <section className="border border-white/10 bg-[#111111] p-5">
+                        <p className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[#d1d5b4]">
+                          TRANSCRIPT RELAY
+                        </p>
+                        <form
+                          className="mt-4 space-y-3"
+                          onSubmit={handleManualTranscriptSubmit}
+                        >
+                          <textarea
+                            rows={5}
+                            value={manualTranscript}
+                            onChange={(event) =>
+                              setManualTranscript(event.target.value)
+                            }
+                            placeholder="Type a replacement transcript if the browser blocks live STT."
+                            className="w-full resize-none border border-white/10 bg-black px-4 py-3 text-sm leading-7 text-white outline-none transition-colors focus:border-[var(--align-accent)]"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!manualTranscript.trim() || forcedMuted}
+                            className="inline-flex items-center gap-2 bg-[var(--align-accent)] px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-black transition duration-150 hover:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <span>SEND TO MONITOR</span>
+                            <ArrowRightIcon className="h-3.5 w-3.5" />
+                          </button>
+                        </form>
+                      </section>
+                    ) : null}
+                  </div>
                 )}
               </div>
             </div>
           </aside>
-        </section>
-      </div>
-    </main>
+        </div>
+
+        <nav className="fixed inset-x-0 bottom-0 z-50 flex h-20 items-stretch justify-center gap-2 border-t border-white/10 bg-black px-3 sm:gap-8 sm:px-8">
+          <BottomControlButton
+            label="마이크"
+            active={!effectiveMicEnabled}
+            onClick={() => setMicrophoneEnabled((current) => !current)}
+          >
+            {!effectiveMicEnabled ? (
+              <MicOffIcon className="h-5 w-5" />
+            ) : (
+              <MicIcon className="h-5 w-5 text-white/68" />
+            )}
+          </BottomControlButton>
+
+          <BottomControlButton
+            label="비주얼 오프"
+            active={!cameraEnabled}
+            onClick={() => setCameraEnabled((current) => !current)}
+          >
+            {!cameraEnabled ? (
+              <CameraOffIcon className="h-5 w-5" />
+            ) : (
+              <CameraIcon className="h-5 w-5 text-white/68" />
+            )}
+          </BottomControlButton>
+
+          <BottomControlButton
+            label="아카이빙"
+            active={monitoringEnabled}
+            onClick={() => setMonitoringEnabled((current) => !current)}
+          >
+            <RecordDotIcon
+              className={`h-5 w-5 ${
+                monitoringEnabled ? "text-[var(--align-accent)]" : "text-white/68"
+              }`}
+            />
+          </BottomControlButton>
+
+          <BottomControlButton
+            label="얼라인완료"
+            active={false}
+            tone="danger"
+            onClick={() => router.push("/")}
+          >
+            <ExitDoorIcon className="h-5 w-5" />
+          </BottomControlButton>
+        </nav>
+      </main>
+
+      {activeModeration ? <AlertOverlay moderation={activeModeration} /> : null}
+    </>
   );
 }

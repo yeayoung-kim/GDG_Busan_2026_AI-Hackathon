@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ALIGN.AI - Speech Monitor</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "outline-variant": "#434933",
+                        "on-tertiary-fixed": "#081e2a",
+                        "surface-dim": "#131313",
+                        "tertiary-container": "#d0e5f6",
+                        "surface": "#131313",
+                        "surface-bright": "#393939",
+                        "primary": "#ffffff",
+                        "error": "#ffb4ab",
+                        "primary-fixed": "#bdf500",
+                        "tertiary-fixed": "#d0e5f6",
+                        "on-secondary-container": "#b4b5b5",
+                        "surface-variant": "#353535",
+                        "on-surface-variant": "#c3caac",
+                        "surface-container-highest": "#353535",
+                        "inverse-primary": "#4e6700",
+                        "on-tertiary-container": "#536775",
+                        "on-primary-container": "#536d00",
+                        "on-secondary": "#2f3131",
+                        "on-primary-fixed": "#151f00",
+                        "inverse-surface": "#e5e2e1",
+                        "primary-container": "#bdf500",
+                        "background": "#131313",
+                        "secondary-fixed": "#e2e2e2",
+                        "secondary-container": "#454747",
+                        "on-error": "#690005",
+                        "outline": "#8d9479",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "tertiary-fixed-dim": "#b5c9da",
+                        "on-error-container": "#ffdad6",
+                        "surface-tint": "#a6d700",
+                        "primary-fixed-dim": "#a6d700",
+                        "on-tertiary": "#1f333f",
+                        "surface-container-high": "#2a2a2a",
+                        "tertiary": "#ffffff",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary": "#273500",
+                        "secondary": "#c6c6c7",
+                        "surface-container-low": "#1c1b1b",
+                        "on-primary-fixed-variant": "#3a4d00",
+                        "on-secondary-fixed-variant": "#454747",
+                        "on-tertiary-fixed-variant": "#364957",
+                        "surface-container": "#20201f",
+                        "inverse-on-surface": "#313030",
+                        "error-container": "#93000a",
+                        "on-background": "#e5e2e1"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "40px",
+                        "panel-width": "360px",
+                        "gutter": "24px",
+                        "unit": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.15em", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "letterSpacing": "0.01em", "fontWeight": "400"}],
+                        "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-sm": ["14px", {"lineHeight": "1.5", "letterSpacing": "0.02em", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Base styles for material symbols */
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface h-screen w-screen overflow-hidden selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- TopAppBar Component (from JSON) -->
+<header class="docked full-width top-0 border-b border-b border-zinc-800 flex justify-between items-center w-full px-10 h-16 bg-black z-40 fixed">
+<div class="text-xl font-black tracking-widest text-[#c5ff00] font-['Inter'] font-bold tracking-tighter uppercase">ALIGN.AI</div>
+<div class="flex items-center gap-6">
+<span class="text-white font-['Inter'] text-sm tracking-widest uppercase">Room: PGY-902</span>
+<div class="flex items-center gap-4">
+<button class="text-white hover:text-[#c5ff00] transition-colors scale-100 active:scale-95 flex items-center justify-center">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="text-white hover:text-[#c5ff00] transition-colors scale-100 active:scale-95 flex items-center justify-center">
+<span class="material-symbols-outlined">help</span>
+</button>
+</div>
+</div>
+</header>
+<!-- SideNavBar Component (from JSON) -->
+<aside class="docked right-0 h-full w-80 border-l border-zinc-600 bg-[#1A1A1A] fixed right-0 top-16 bottom-20 flex flex-col py-6 z-40">
+<div class="px-6 mb-8 flex flex-col gap-1">
+<h2 class="text-[#c5ff00] font-bold font-['Inter'] text-xs font-mono tracking-tight uppercase">SPEECH_MONITOR</h2>
+<p class="font-['Inter'] text-xs font-mono tracking-tight text-zinc-500 uppercase">LIVE_SYNC_ACTIVE</p>
+</div>
+<nav class="flex flex-col gap-4">
+<!-- Active Tab -->
+<button class="flex items-center gap-3 text-[#c5ff00] border-l-2 border-[#c5ff00] pl-4 py-1 hover:text-white Transition weight on hover font-['Inter'] text-xs font-mono tracking-tight uppercase w-full text-left">
+<span class="material-symbols-outlined text-[18px]">segment</span>
+                Logs
+            </button>
+<!-- Inactive Tab -->
+<button class="flex items-center gap-3 text-zinc-500 pl-4 py-1 hover:text-white Transition weight on hover font-['Inter'] text-xs font-mono tracking-tight uppercase w-full text-left">
+<span class="material-symbols-outlined text-[18px]">analytics</span>
+                Metrics
+            </button>
+</nav>
+</aside>
+<!-- BottomNavBar Component (from JSON) -->
+<nav class="docked fixed bottom-0 w-full border-t border-zinc-800 bg-black fixed bottom-0 left-0 w-full z-50 flex justify-center gap-12 items-center h-20 px-10">
+<!-- Active Tab (Forced Muting context) -->
+<button class="flex flex-col items-center justify-center text-[#c5ff00] border-t-2 border-[#c5ff00] pt-2 h-full hover:bg-zinc-900 font-['Inter'] text-[10px] uppercase font-bold tracking-widest Active items use #c5ff00 stroke weight increase px-4 w-24">
+<span class="material-symbols-outlined mb-1 text-[24px]" style="font-variation-settings: 'FILL' 1;">mic_off</span>
+            Mute
+        </button>
+<!-- Inactive Tabs -->
+<button class="flex flex-col items-center justify-center text-white pt-2 h-full hover:bg-zinc-900 border-t-2 border-transparent font-['Inter'] text-[10px] uppercase font-bold tracking-widest px-4 w-24">
+<span class="material-symbols-outlined mb-1 text-[24px]">videocam</span>
+            Camera
+        </button>
+<button class="flex flex-col items-center justify-center text-white pt-2 h-full hover:bg-zinc-900 border-t-2 border-transparent font-['Inter'] text-[10px] uppercase font-bold tracking-widest px-4 w-24">
+<span class="material-symbols-outlined mb-1 text-[24px]">fiber_manual_record</span>
+            Record
+        </button>
+<button class="flex flex-col items-center justify-center text-error pt-2 h-full hover:bg-zinc-900 border-t-2 border-transparent font-['Inter'] text-[10px] uppercase font-bold tracking-widest px-4 w-24">
+<span class="material-symbols-outlined mb-1 text-[24px]">call_end</span>
+            Leave
+        </button>
+</nav>
+<!-- Main Canvas (Backgrounded) -->
+<main class="absolute inset-0 pt-16 pb-20 pr-80 flex bg-background p-container-padding gap-gutter">
+<!-- Video Feed 1 -->
+<div class="flex-1 bg-surface-container-lowest relative border border-surface-variant flex flex-col">
+<img class="w-full h-full object-cover opacity-20 grayscale sepia-[.2] hue-rotate-180" data-alt="close up professional headshot of mature asian executive woman in minimalist dark studio lighting serious focused expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDqEBKL6gh7zxZTWZjJirv0u_38mcw4bImRZY0rV_b1bKzLtJWN_2FMxXXblfSjsdPSc9CxwKqGzCTRfc1oNsO7zTo3rDPoaM7lQo0wCHKxo5yKk8umvKUxP2ZyBXGULswxYP-11XrV72eKp4-g9LmmdISt26Ww_G9PYF7LOZxW-37hzU0BGp9I1_TtZIhSQfh2s4-Anl3Q_yjRK6vCtFPQq3QYCw8qwsqz1PIJPRPrDbxMgCLylgPiOE3FgiyGytfka3HIq3uGMME"/>
+<div class="absolute bottom-4 left-4 bg-black/60 px-3 py-1 font-label-caps text-label-caps text-primary border border-surface-variant">
+                DIRECTOR_KIM
+            </div>
+</div>
+<!-- Video Feed 2 -->
+<div class="flex-1 bg-surface-container-lowest relative border border-surface-variant flex flex-col">
+<img class="w-full h-full object-cover opacity-20 grayscale sepia-[.2] hue-rotate-180" data-alt="close up headshot of young caucasian male software engineer in dark architectural office setting listening intently" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyqPgxAsAbgXd5xumacN9YLhuBKwZdseCEK49SUkCkSi9hea5IfAq4puHdLHV9o2syP3YegttyN-F8dnlDPQsTVnzfrNwRPd37O2GHYC-LWcUo02530Q80i_DhtFaC6Nyn0u3xOWC-tRiKbyGUuNwB0ZfAT17yXFg-OMbe-YXcfE0YhUtNq0ovRC4KbTXq7KffNE055ajR6G3IDlI0dosKbLtA5tYIspW2PTIw_Ecf-ju6lP725t7aeygG60J2w5EzY_W4a5A1yaY"/>
+<div class="absolute bottom-4 left-4 bg-black/60 px-3 py-1 font-label-caps text-label-caps text-primary border border-surface-variant flex items-center gap-2">
+<div class="w-2 h-2 bg-primary-fixed"></div>
+                PGY_LEAD
+            </div>
+</div>
+</main>
+<!-- CRITICAL ALERT OVERLAY -->
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm px-container-padding">
+<!-- Alert Modal (Precision Minimalist) -->
+<div class="w-full max-w-[800px] bg-surface border border-primary p-container-padding flex flex-col gap-[48px] relative overflow-hidden">
+<!-- Minimalist Top Accent Line -->
+<div class="absolute top-0 left-0 right-0 h-1 bg-error"></div>
+<!-- Header Section -->
+<div class="flex flex-col gap-[16px]">
+<div class="inline-flex items-center gap-2 self-start border border-error px-4 py-2 bg-error/10">
+<span class="material-symbols-outlined text-error text-[18px]" style="font-variation-settings: 'FILL' 1;">mic_off</span>
+<span class="font-label-caps text-label-caps text-error uppercase tracking-[0.2em]">Forced Muting Active</span>
+</div>
+<h1 class="font-display-lg text-display-lg text-primary tracking-tighter uppercase mt-2">
+                    Vibe Mismatch Detected
+                </h1>
+</div>
+<!-- Speech Comparison Matrix -->
+<div class="flex flex-col relative border-l border-surface-variant pl-[32px]">
+<!-- Original Speech (Gray) -->
+<div class="pb-[32px] flex flex-col gap-3 relative">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">history</span>
+                        Original Speech Target
+                    </h3>
+<p class="font-body-lg text-body-lg text-on-surface-variant italic">
+                        "이거 못 해요"
+                    </p>
+</div>
+<!-- AI Optimized Version (Neon) -->
+<div class="pt-[32px] flex flex-col gap-4 relative border-t border-surface-variant/50">
+<!-- Active State Indicator -->
+<div class="absolute left-[-33px] top-[32px] bottom-0 w-[3px] bg-primary-fixed"></div>
+<h3 class="font-label-caps text-label-caps text-primary-fixed uppercase tracking-widest flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">auto_awesome</span>
+                        AI Optimized Version
+                    </h3>
+<p class="font-headline-md text-headline-md text-primary-fixed leading-relaxed tracking-tight">
+                        "현재 리소스 기준으로는 바로 진행이 어려워서 우선순위 얼라인 후 다시 공유드릴게요."
+                    </p>
+</div>
+</div>
+<!-- Footer Status -->
+<div class="flex items-center gap-3 pt-[24px] border-t border-surface-variant mt-auto">
+<div class="flex gap-1 h-4 items-end">
+<div class="w-1 h-2 bg-primary-fixed"></div>
+<div class="w-1 h-4 bg-primary-fixed"></div>
+<div class="w-1 h-3 bg-primary-fixed"></div>
+<div class="w-1 h-1 bg-primary-fixed"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface uppercase tracking-wider text-xs">Playing TTS to Recipient Channel...</span>
+</div>
+</div>
+</div>
+</body></html>
