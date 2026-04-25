@@ -1,67 +1,67 @@
-# Pangyo Firewall
+# Align.ai
 
-회의 중 발화가 판교어 기준을 통과하는지 검사하고, 위험 발화는 사이렌과 함께 차단한 뒤 AI 대체 문장으로 바꿔주는 해커톤 MVP 웹앱입니다.
+2명의 참가자가 같은 방에 접속해 WebRTC 화상 통화를 진행하고, 브라우저 STT로 발화를 감지한 뒤 판교어 밀도를 분석하는 해커톤용 실전 MVP입니다. 판교어가 아니라고 판단되면 방 전체를 잠시 음소거하고, 교정된 문장을 TTS로 다시 읽어줍니다.
 
-## 스택
+## 핵심 기능
 
-- Next.js App Router
+- Next.js App Router 기반 2인 화상회의
+- 브라우저 `SpeechRecognition` 기반 실시간 발화 감지
+- 서버 측 판교어 점수화 및 교정 문장 생성
+- 위반 시 전원 강제 음소거 상태 동기화
+- Google Cloud Text-to-Speech 우선, 브라우저 `speechSynthesis` 폴백
+- Cloud Run 단일 인스턴스 배포 전제 인메모리 룸 상태 관리
+
+## 기술 스택
+
+- Next.js 16 App Router
 - TypeScript
-- Tailwind CSS
-- LocalStorage 기반 mock 세션 상태
+- Tailwind CSS 4
+- WebRTC
+- Web Speech API
+- Google Cloud Text-to-Speech REST API
 
-## 구현된 화면
-
-- 메인 화면
-  - 서비스명, 닉네임 입력, 방 코드 입력, 회의방 입장 버튼
-- 회의방 화면
-  - 참가자 목록
-  - 발화 입력창
-  - 발화 제출 버튼
-  - 회의 로그 영역
-  - Pangyo Score 표시
-  - 위험 발화 감지 시 사이렌 모달
-  - 음소거 연출
-  - AI 대체 발화 카드
-- 회의 리포트 화면
-  - 총 발화 수
-  - 차단된 발화 수
-  - 평균 Pangyo Score
-  - 가장 위험한 발화
-  - 최종 평가 문구
-
-## Mock 분석 규칙
-
-아래 표현이 포함되면 위험 발화로 판단합니다.
-
-- 못 해요
-- 몰라요
-- 싫어요
-- 제가 안 했어요
-- 이 회의 왜 해요
-- 버그예요
-- 별로
-
-위험 발화는 낮은 `pangyoScore`를 받고, 고쳐 말한 `replacement` 문장을 생성합니다. 그 외 발화는 통과 처리됩니다.
-
-## 실행 방법
-
-1. 의존성 설치
+## 로컬 실행
 
 ```bash
 npm install
-```
-
-2. 개발 서버 실행
-
-```bash
 npm run dev
 ```
 
-3. 브라우저에서 확인
+브라우저는 `Chrome` 계열을 권장합니다.
 
-```text
-http://localhost:3000
+## 환경 변수
+
+선택 사항입니다. 설정하지 않으면 브라우저 TTS로 자동 폴백됩니다.
+
+```bash
+GOOGLE_TTS_API_KEY=your_api_key
+GCP_TTS_VOICE=ko-KR-Neural2-B
 ```
+
+Cloud Run에서는 API Key 없이도 기본 서비스 계정으로 호출하도록 시도합니다.
+
+## GCP 배포 가이드
+
+1. GCP에서 `Cloud Run`, `Cloud Build`, `Artifact Registry`, `Text-to-Speech API`를 활성화합니다.
+2. 실시간 방 상태가 인메모리이므로 `최대 인스턴스 1개`로 배포합니다.
+3. 예시 배포:
+
+```bash
+gcloud run deploy align-ai \
+  --source . \
+  --region asia-northeast3 \
+  --allow-unauthenticated \
+  --max-instances 1 \
+  --set-env-vars GCP_TTS_VOICE=ko-KR-Neural2-B
+```
+
+4. 배포 후 브라우저에서 카메라/마이크 권한을 허용하고, 동일한 방 코드를 두 명이 공유해 접속하면 됩니다.
+
+## 주의 사항
+
+- 룸/시그널 상태는 서버 메모리에 유지되므로 해커톤 데모나 단일 인스턴스 Cloud Run 운영에 적합합니다.
+- STT는 브라우저 의존 기능이라 환경에 따라 지원 여부가 다릅니다. 지원되지 않으면 화면의 수동 입력 콘솔로 시연할 수 있습니다.
+- 별도 테스트 코드는 작성하지 않았고, 린트/타입체크/프로덕션 빌드 기준으로 검증하도록 구성했습니다.
 
 ## 검증 커맨드
 
@@ -71,29 +71,19 @@ npm run typecheck
 npm run build
 ```
 
-## 디렉터리 구조
+## 주요 구조
 
 ```text
 app/
-  page.tsx
-  room/page.tsx
-  report/page.tsx
+  api/rooms/[roomId]/*
+  room/[roomId]/page.tsx
 components/
-  home/
+  landing/
   room/
-  report/
-  shared/
 lib/
   pangyo-analyzer.ts
-  meeting-session.ts
+  server/
 types/
-  meeting.ts
+  realtime.ts
+  web-speech.d.ts
 ```
-
-## 다음 단계 TODO
-
-- Gemini API 연결로 실제 판교어 점수화 및 대체 발화 생성
-- Socket.IO 연결로 실시간 멀티 유저 회의방 반영
-- TTS 연결로 AI 대체 발화를 음성으로 재생
-- STT 연결로 텍스트 입력 대신 실제 발화 분석
-- 회의 리포트 저장 및 공유 기능 추가
