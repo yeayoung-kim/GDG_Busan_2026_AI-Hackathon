@@ -19,13 +19,11 @@ import {
   ChartIcon,
   CheckCircleIcon,
   ExitDoorIcon,
-  HelpCircleIcon,
   HistoryIcon,
   MicIcon,
   MicOffIcon,
   RecordDotIcon,
   SegmentIcon,
-  SettingsIcon,
   SparkIcon,
 } from "@/components/shared/align-icons";
 import type {
@@ -53,6 +51,13 @@ type RecognitionState =
   | "unsupported";
 
 type PanelView = "logs" | "metrics";
+type AudioActivityState = "inactive" | "muted" | "silent" | "speaking";
+
+interface AudioMeterHandle {
+  analyser: AnalyserNode;
+  data: Uint8Array<ArrayBuffer>;
+  source: MediaStreamAudioSourceNode;
+}
 
 interface LiveRoomScreenProps {
   roomId: string;
@@ -217,21 +222,20 @@ function getEntryTone(entry: SpeechLogEntry) {
   };
 }
 
-interface TopIconButtonProps {
-  label: string;
-  children: ReactNode;
-}
+function getAudioActivityLabel(state: AudioActivityState) {
+  if (state === "speaking") {
+    return "SPEAKING NOW";
+  }
 
-function TopIconButton({ label, children }: TopIconButtonProps) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      className="flex h-8 w-8 items-center justify-center text-white transition-colors duration-150 hover:text-[var(--align-accent)]"
-    >
-      {children}
-    </button>
-  );
+  if (state === "silent") {
+    return "VOICE READY";
+  }
+
+  if (state === "muted") {
+    return "MIC MUTED";
+  }
+
+  return "AUDIO OFF";
 }
 
 interface VideoTileProps {
@@ -245,7 +249,7 @@ interface VideoTileProps {
   centerContent?: ReactNode;
   footerStatus: string;
   footerTone?: "accent" | "muted";
-  showSignalBars?: boolean;
+  audioActivityState: AudioActivityState;
 }
 
 function VideoTile({
@@ -259,8 +263,16 @@ function VideoTile({
   centerContent,
   footerStatus,
   footerTone = "muted",
-  showSignalBars = false,
+  audioActivityState,
 }: VideoTileProps) {
+  const audioActivityLabel = getAudioActivityLabel(audioActivityState);
+  const audioActivityTone =
+    audioActivityState === "speaking"
+      ? "border-[var(--align-accent)] text-[var(--align-accent)]"
+      : audioActivityState === "silent"
+        ? "border-white/18 text-white/82"
+        : "border-white/10 text-[#656565]";
+
   return (
     <article className="relative min-h-[440px] overflow-hidden border border-white/10 bg-[#0b0b0b] sm:min-h-[560px]">
       {videoRef ? (
@@ -296,16 +308,25 @@ function VideoTile({
         </div>
       </div>
 
-      {showSignalBars ? (
-        <div className="absolute bottom-5 right-5 text-[var(--align-accent)]">
-          <div className="signal-bars">
+      <div className="absolute bottom-5 right-5">
+        <div
+          className={`flex items-center gap-3 border bg-black/75 px-4 py-2 ${audioActivityTone}`}
+        >
+          <div
+            className={`signal-bars ${
+              audioActivityState === "speaking" ? "opacity-100" : "opacity-55"
+            }`}
+          >
             <span />
             <span />
             <span />
             <span />
           </div>
+          <span className="font-mono text-[0.68rem] uppercase tracking-[0.22em]">
+            {audioActivityLabel}
+          </span>
         </div>
-      ) : null}
+      </div>
 
       <div className="pointer-events-none absolute left-5 top-5">
         <p
@@ -396,7 +417,7 @@ function AlertOverlay({ moderation }: AlertOverlayProps) {
         </div>
 
         <h2 className="mt-8 text-[clamp(3rem,6vw,5.75rem)] font-black uppercase leading-[0.94] tracking-[-0.06em] text-white">
-          조직 싱크 치명적 오류
+          판교어 번역 중
         </h2>
 
         <div className="mt-10 border-l border-white/12 pl-5 sm:pl-10">
@@ -459,6 +480,8 @@ export function LiveRoomScreen({
   const [manualTranscript, setManualTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [lastTranscriptAt, setLastTranscriptAt] = useState("");
+  const [localSpeaking, setLocalSpeaking] = useState(false);
+  const [remoteSpeaking, setRemoteSpeaking] = useState(false);
   const [callStatus, setCallStatus] = useState<"waiting" | "connecting" | "live">(
     "waiting",
   );
@@ -469,6 +492,14 @@ export function LiveRoomScreen({
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRestartTimerRef = useRef<number | null>(null);
+  const recognitionBlockedRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const localAudioMeterRef = useRef<AudioMeterHandle | null>(null);
+  const remoteAudioMeterRef = useRef<AudioMeterHandle | null>(null);
+  const audioMeterFrameRef = useRef<number | null>(null);
+  const localSpeakingUntilRef = useRef(0);
+  const remoteSpeakingUntilRef = useRef(0);
   const lastPlayedModerationRef = useRef<string | null>(null);
   const pollingTimerRef = useRef<number | null>(null);
   const cursorRef = useRef(0);
@@ -540,6 +571,7 @@ export function LiveRoomScreen({
         }
 
         localStreamRef.current = stream;
+        connectAudioMeter("local", stream);
 
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
@@ -576,6 +608,7 @@ export function LiveRoomScreen({
         setBootstrapState("ready");
 
         const RecognitionConstructor = resolveRecognitionConstructor();
+        recognitionBlockedRef.current = false;
         setRecognitionState(RecognitionConstructor ? "ready" : "unsupported");
         startPolling();
       } catch (error) {
@@ -666,11 +699,7 @@ export function LiveRoomScreen({
 
   // Recognition start/stop is coordinated by the surrounding room state machine.
   useEffect(() => {
-    if (
-      bootstrapState !== "ready" ||
-      recognitionState === "unsupported" ||
-      recognitionState === "blocked"
-    ) {
+    if (bootstrapState !== "ready") {
       stopRecognition();
       return;
     }
@@ -685,7 +714,7 @@ export function LiveRoomScreen({
     return () => {
       stopRecognition();
     };
-  }, [bootstrapState, forcedMuted, microphoneEnabled, monitoringEnabled, recognitionState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bootstrapState, forcedMuted, microphoneEnabled, monitoringEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Device sync is fire-and-forget and should not retrigger from recreated helpers.
   useEffect(() => {
@@ -718,6 +747,11 @@ export function LiveRoomScreen({
       isUnmountingRef.current = true;
       stopPolling();
       stopRecognition();
+      stopAudioMeterLoop();
+      disconnectAudioMeter("local");
+      disconnectAudioMeter("remote");
+      void audioContextRef.current?.close().catch(() => undefined);
+      audioContextRef.current = null;
       audioRef.current?.pause();
       window.speechSynthesis?.cancel();
       localStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -759,6 +793,171 @@ export function LiveRoomScreen({
     window.speechSynthesis.speak(utterance);
   }
 
+  function clearRecognitionRestartTimer() {
+    if (recognitionRestartTimerRef.current) {
+      window.clearTimeout(recognitionRestartTimerRef.current);
+      recognitionRestartTimerRef.current = null;
+    }
+  }
+
+  function stopAudioMeterLoop() {
+    if (audioMeterFrameRef.current) {
+      window.cancelAnimationFrame(audioMeterFrameRef.current);
+      audioMeterFrameRef.current = null;
+    }
+  }
+
+  function resetSpeakingState(target: "local" | "remote") {
+    if (target === "local") {
+      localSpeakingUntilRef.current = 0;
+
+      if (!isUnmountingRef.current) {
+        setLocalSpeaking(false);
+      }
+
+      return;
+    }
+
+    remoteSpeakingUntilRef.current = 0;
+
+    if (!isUnmountingRef.current) {
+      setRemoteSpeaking(false);
+    }
+  }
+
+  function disconnectAudioMeter(target: "local" | "remote") {
+    const meterRef = target === "local" ? localAudioMeterRef : remoteAudioMeterRef;
+
+    meterRef.current?.source.disconnect();
+    meterRef.current?.analyser.disconnect();
+    meterRef.current = null;
+    resetSpeakingState(target);
+
+    if (!localAudioMeterRef.current && !remoteAudioMeterRef.current) {
+      stopAudioMeterLoop();
+    }
+  }
+
+  function getAudioContext() {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      void audioContextRef.current.resume().catch(() => undefined);
+      return audioContextRef.current;
+    }
+
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      return null;
+    }
+
+    const nextContext = new AudioContextConstructor();
+    audioContextRef.current = nextContext;
+    void nextContext.resume().catch(() => undefined);
+    return nextContext;
+  }
+
+  function readAudioLevel(meter: AudioMeterHandle) {
+    meter.analyser.getByteTimeDomainData(meter.data);
+
+    let total = 0;
+
+    for (const sample of meter.data) {
+      const normalized = (sample - 128) / 128;
+      total += normalized * normalized;
+    }
+
+    return Math.sqrt(total / meter.data.length);
+  }
+
+  function updateSpeakingMeter(target: "local" | "remote") {
+    const meter = target === "local" ? localAudioMeterRef.current : remoteAudioMeterRef.current;
+    const threshold = target === "local" ? 0.034 : 0.028;
+    const speakingUntilRef =
+      target === "local" ? localSpeakingUntilRef : remoteSpeakingUntilRef;
+    const setSpeaking = target === "local" ? setLocalSpeaking : setRemoteSpeaking;
+
+    if (!meter) {
+      speakingUntilRef.current = 0;
+      setSpeaking((current) => (current ? false : current));
+      return;
+    }
+
+    const level = readAudioLevel(meter);
+    const now = performance.now();
+
+    if (level >= threshold) {
+      speakingUntilRef.current = now + 220;
+    }
+
+    const nextSpeaking = speakingUntilRef.current > now;
+    setSpeaking((current) => (current === nextSpeaking ? current : nextSpeaking));
+  }
+
+  function startAudioMeterLoop() {
+    if (audioMeterFrameRef.current) {
+      return;
+    }
+
+    const tick = () => {
+      updateSpeakingMeter("local");
+      updateSpeakingMeter("remote");
+
+      if (!localAudioMeterRef.current && !remoteAudioMeterRef.current) {
+        audioMeterFrameRef.current = null;
+        return;
+      }
+
+      audioMeterFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    audioMeterFrameRef.current = window.requestAnimationFrame(tick);
+  }
+
+  function connectAudioMeter(target: "local" | "remote", stream: MediaStream | null) {
+    if (!stream || stream.getAudioTracks().length === 0) {
+      disconnectAudioMeter(target);
+      return;
+    }
+
+    const context = getAudioContext();
+
+    if (!context) {
+      return;
+    }
+
+    disconnectAudioMeter(target);
+
+    try {
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.78;
+      source.connect(analyser);
+
+      const meter = {
+        analyser,
+        data: new Uint8Array(analyser.frequencyBinCount),
+        source,
+      };
+
+      if (target === "local") {
+        localAudioMeterRef.current = meter;
+      } else {
+        remoteAudioMeterRef.current = meter;
+      }
+
+      startAudioMeterLoop();
+    } catch {
+      disconnectAudioMeter(target);
+    }
+  }
+
   function ensurePeerConnection() {
     if (peerConnectionRef.current) {
       return peerConnectionRef.current;
@@ -789,6 +988,8 @@ export function LiveRoomScreen({
           remoteStream.addTrack(track);
         }
       });
+
+      connectAudioMeter("remote", remoteStream);
     };
 
     connection.onicecandidate = (event) => {
@@ -829,6 +1030,7 @@ export function LiveRoomScreen({
     makingOfferRef.current = false;
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    disconnectAudioMeter("remote");
 
     if (remoteStreamRef.current) {
       remoteStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -1020,10 +1222,20 @@ export function LiveRoomScreen({
     }
   }
 
-  function stopRecognition() {
+  function stopRecognition(preserveState = false) {
+    clearRecognitionRestartTimer();
+
     const activeRecognition = recognitionRef.current;
 
     if (!activeRecognition) {
+      setInterimTranscript("");
+
+      if (!preserveState) {
+        setRecognitionState((current) =>
+          current === "blocked" || current === "unsupported" ? current : "ready",
+        );
+      }
+
       return;
     }
 
@@ -1034,11 +1246,17 @@ export function LiveRoomScreen({
     activeRecognition.stop();
     recognitionRef.current = null;
 
-    setRecognitionState((current) => (current === "blocked" ? "blocked" : "ready"));
+    setInterimTranscript("");
+
+    if (!preserveState) {
+      setRecognitionState((current) => (current === "blocked" ? "blocked" : "ready"));
+    }
   }
 
   function startRecognition() {
-    if (recognitionRef.current || recognitionState === "unsupported") {
+    clearRecognitionRestartTimer();
+
+    if (recognitionRef.current || recognitionBlockedRef.current || isUnmountingRef.current) {
       return;
     }
 
@@ -1061,7 +1279,9 @@ export function LiveRoomScreen({
 
     recognition.onerror = (event) => {
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        recognitionBlockedRef.current = true;
         setRecognitionState("blocked");
+        stopRecognition(true);
         return;
       }
 
@@ -1098,16 +1318,20 @@ export function LiveRoomScreen({
 
     recognition.onend = () => {
       recognitionRef.current = null;
+      setInterimTranscript("");
 
       if (
         monitoringEnabled &&
         microphoneEnabled &&
         !forcedMuted &&
+        !recognitionBlockedRef.current &&
         !isUnmountingRef.current
       ) {
-        window.setTimeout(() => {
+        clearRecognitionRestartTimer();
+        recognitionRestartTimerRef.current = window.setTimeout(() => {
+          recognitionRestartTimerRef.current = null;
           startRecognition();
-        }, 260);
+        }, 120);
         return;
       }
 
@@ -1115,7 +1339,19 @@ export function LiveRoomScreen({
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+
+      if (!isUnmountingRef.current && !recognitionBlockedRef.current) {
+        recognitionRestartTimerRef.current = window.setTimeout(() => {
+          recognitionRestartTimerRef.current = null;
+          startRecognition();
+        }, 180);
+      }
+    }
   }
 
   async function submitTranscript(transcript: string) {
@@ -1146,7 +1382,17 @@ export function LiveRoomScreen({
       cursorRef.current = payload.cursor;
       setParticipants(payload.room.participants);
       setLogs(payload.room.logs);
-      setModeration(payload.room.moderation);
+      setModeration((current) => {
+        if (payload.room.moderation) {
+          return payload.room.moderation;
+        }
+
+        if (current && isModerationActive(current)) {
+          return current;
+        }
+
+        return null;
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "발화 분석 처리에 실패했습니다.",
@@ -1172,6 +1418,19 @@ export function LiveRoomScreen({
   const remotePanelName = formatMonitorParticipantName(
     remoteParticipant?.name ?? "REMOTE_PGY",
   );
+  const localAudioActivityState: AudioActivityState = !localStreamRef.current
+    ? "inactive"
+    : !effectiveMicEnabled
+      ? "muted"
+      : localSpeaking
+        ? "speaking"
+        : "silent";
+  const remoteAudioActivityState: AudioActivityState =
+    !remoteParticipant || displayCallStatus !== "live"
+      ? "inactive"
+      : remoteSpeaking
+        ? "speaking"
+        : "silent";
   const liveListeningCopy = deferredInterimTranscript
     ? deferredInterimTranscript
     : recognitionState === "listening"
@@ -1208,14 +1467,6 @@ export function LiveRoomScreen({
             <span className="font-mono text-[0.72rem] uppercase tracking-[0.26em] text-white/92 sm:text-[0.82rem]">
               ROOM: {roomLabel}
             </span>
-            <div className="flex items-center gap-1 sm:gap-2">
-              <TopIconButton label="Settings">
-                <SettingsIcon className="h-4 w-4" />
-              </TopIconButton>
-              <TopIconButton label="Help">
-                <HelpCircleIcon className="h-4 w-4" />
-              </TopIconButton>
-            </div>
           </div>
         </header>
 
@@ -1231,6 +1482,7 @@ export function LiveRoomScreen({
                 badgeActive
                 footerStatus={effectiveMicEnabled ? "VOICE CHANNEL OPEN" : "MIC MUTED"}
                 footerTone={effectiveMicEnabled ? "accent" : "muted"}
+                audioActivityState={localAudioActivityState}
                 centerContent={
                   <div>
                     <CameraOffIcon className="mx-auto h-14 w-14 text-[#525252]" />
@@ -1253,7 +1505,7 @@ export function LiveRoomScreen({
                     ? "REMOTE CHANNEL SYNCED"
                     : "원격 참가자 대기 중"
                 }
-                showSignalBars={displayCallStatus === "live"}
+                audioActivityState={remoteAudioActivityState}
                 centerContent={
                   <div>
                     <p className="font-mono text-[0.82rem] uppercase tracking-[0.26em] text-[#7b7b7b]">

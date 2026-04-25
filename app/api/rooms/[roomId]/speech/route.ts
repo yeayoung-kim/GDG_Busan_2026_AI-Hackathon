@@ -32,7 +32,7 @@ export async function POST(
     );
   }
 
-  const analysis = analyzePangyoSpeech(transcript);
+  const analysis = await analyzePangyoSpeech(transcript);
   const now = new Date();
   const entryId = crypto.randomUUID();
 

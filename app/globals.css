@@ -83,7 +83,7 @@ textarea::placeholder {
 
 .signal-bars > span {
   width: 0.25rem;
-  background: var(--align-accent);
+  background: currentColor;
   animation: signalBounce 1.15s ease-in-out infinite;
 }
 
