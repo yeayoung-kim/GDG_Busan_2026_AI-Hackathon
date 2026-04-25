@@ -705,6 +705,8 @@ export function LiveRoomScreen({
       return;
     }
 
+    isUnmountingRef.current = false;
+    joinedRoomRef.current = false;
     let disposed = false;
 
     async function bootstrap() {
@@ -909,6 +911,8 @@ export function LiveRoomScreen({
 
   // Cleanup should use the current refs when the room unmounts.
   useEffect(() => {
+    isUnmountingRef.current = false;
+
     return () => {
       isUnmountingRef.current = true;
       stopPolling();
@@ -1655,7 +1659,7 @@ export function LiveRoomScreen({
       }
     };
 
-    pollingTimerRef.current = window.setTimeout(loop, 900);
+    void loop();
   }
 
   function stopPolling() {
