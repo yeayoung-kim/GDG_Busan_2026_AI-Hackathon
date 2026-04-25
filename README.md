@@ -5,7 +5,7 @@
 ## 핵심 기능
 
 - Next.js App Router 기반 2인 화상회의
-- 브라우저 `SpeechRecognition` 기반 실시간 발화 감지
+- 브라우저별 폴백이 있는 실시간 발화 감지
 - Gemini API + 판교어 사전 기반 문장 완성 및 교정
 - 위반 시 전원 강제 음소거 상태 동기화
 - Google Cloud Text-to-Speech 우선, 브라우저 `speechSynthesis` 폴백
@@ -17,7 +17,7 @@
 - TypeScript
 - Tailwind CSS 4
 - WebRTC
-- Web Speech API
+- Web Speech API + MediaRecorder + Cloud Speech-to-Text
 - Gemini API
 - Google Cloud Text-to-Speech REST API
 
@@ -28,7 +28,8 @@ npm install
 npm run dev
 ```
 
-브라우저는 `Chrome` 계열을 권장합니다.
+`Chrome` 계열은 브라우저 STT를 우선 사용하고, `Safari`/`Firefox`/`Edge` 등에서는 `MediaRecorder`로 짧은 발화를 업로드해 Cloud STT로 전사합니다.
+비 Chrome 브라우저에서 자동 전사를 쓰려면 Cloud Run 서비스 계정 또는 로컬 ADC(`gcloud auth application-default login`)가 필요합니다.
 
 ## 환경 변수
 
@@ -39,12 +40,17 @@ VERTEX_AI_API_KEY=your_vertex_express_api_key
 VERTEX_GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-2.5-flash-lite
+GOOGLE_CLOUD_PROJECT_ID=your_gcp_project_id
+STT_LOCATION=global
+STT_LANGUAGE_CODES=ko-KR
+STT_MODEL=short
 GOOGLE_TTS_API_KEY=your_api_key
 GCP_TTS_VOICE=ko-KR-Neural2-B
 ```
 
 `VERTEX_GEMINI_MODEL`과 `GEMINI_MODEL`은 선택 사항이며, 기본값은 `gemini-2.5-flash-lite`입니다.
 Cloud Run에서는 TTS에 한해 API Key 없이도 기본 서비스 계정으로 호출하도록 시도합니다.
+Cloud STT는 API 키 대신 Cloud Run 서비스 계정 또는 로컬 ADC를 사용합니다.
 
 ## GCP 배포 가이드
 
@@ -66,7 +72,7 @@ gcloud run deploy align-ai \
 ## 주의 사항
 
 - 룸/시그널 상태는 서버 메모리에 유지되므로 해커톤 데모나 단일 인스턴스 Cloud Run 운영에 적합합니다.
-- STT는 브라우저 의존 기능이라 환경에 따라 지원 여부가 다릅니다. 지원되지 않으면 화면의 수동 입력 콘솔로 시연할 수 있습니다.
+- 브라우저 STT가 없는 환경은 `MediaRecorder + Cloud STT` 폴백으로 처리하며, 그마저 사용할 수 없으면 화면의 수동 입력 콘솔로 시연할 수 있습니다.
 - 별도 테스트 코드는 작성하지 않았고, 린트/타입체크/프로덕션 빌드 기준으로 검증하도록 구성했습니다.
 
 ## 검증 커맨드

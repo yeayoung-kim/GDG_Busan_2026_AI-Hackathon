@@ -298,3 +298,44 @@ export function appendSpeechLog(
     room: snapshotRoom(room),
   };
 }
+
+export function updateSpeechLog(
+  roomId: string,
+  entryId: string,
+  updates: Partial<
+    Pick<
+      SpeechLogEntry,
+      "deliveredText" | "pangyoScore" | "status" | "matchedKeywords" | "reason"
+    >
+  >,
+  moderation: ModerationState | null,
+) {
+  const normalizedRoomId = sanitizeRoomId(roomId);
+  const room = getStore().get(normalizedRoomId);
+
+  if (!room) {
+    return null;
+  }
+
+  const logIndex = room.logs.findIndex((entry) => entry.id === entryId);
+
+  if (logIndex === -1) {
+    return null;
+  }
+
+  room.logs[logIndex] = {
+    ...room.logs[logIndex],
+    ...updates,
+  };
+
+  if (room.moderation?.id === entryId) {
+    room.moderation = moderation;
+  }
+
+  touchRoom(room);
+
+  return {
+    cursor: room.sequence,
+    room: snapshotRoom(room),
+  };
+}

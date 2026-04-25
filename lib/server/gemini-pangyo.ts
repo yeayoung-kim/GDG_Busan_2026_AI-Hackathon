@@ -1,25 +1,34 @@
+import { GoogleGenAI, Type } from "@google/genai";
 import { extractPangyoKeywords } from "@/lib/pangyo/dictionary";
 import { buildPangyoSystemPrompt, buildPangyoUserPrompt } from "@/lib/pangyo/prompt";
 import type { PangyoAnalysis } from "@/types/realtime";
 
-const VERTEX_EXPRESS_API_BASE_URL = "https://aiplatform.googleapis.com/v1/publishers/google/models";
-const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_TIMEOUT_MS = 6_000;
-
-interface GeminiResponseCandidate {
-  content?: {
-    parts?: Array<{
-      text?: string;
-    }>;
-  };
-}
-
-interface GeminiGenerateContentResponse {
-  candidates?: GeminiResponseCandidate[];
-  promptFeedback?: {
-    blockReason?: string;
-  };
-}
+const GEMINI_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    originalText: { type: Type.STRING },
+    rewrittenText: { type: Type.STRING },
+    status: {
+      type: Type.STRING,
+      enum: ["pass", "blocked"],
+    },
+    pangyoScore: { type: Type.INTEGER },
+    matchedKeywords: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+    },
+    reason: { type: Type.STRING },
+  },
+  required: [
+    "originalText",
+    "rewrittenText",
+    "status",
+    "pangyoScore",
+    "matchedKeywords",
+    "reason",
+  ],
+} as const;
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, value));
@@ -48,6 +57,19 @@ function resolveVertexApiKey() {
   );
 }
 
+function resolveVertexProject() {
+  return process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || null;
+}
+
+function resolveVertexLocation() {
+  return (
+    process.env.GOOGLE_CLOUD_LOCATION ||
+    process.env.VERTEX_LOCATION ||
+    process.env.GCLOUD_LOCATION ||
+    "global"
+  );
+}
+
 function resolveGeminiModel() {
   const configuredModel = process.env.GEMINI_MODEL?.trim();
   const configuredVertexModel = process.env.VERTEX_GEMINI_MODEL?.trim();
@@ -57,8 +79,54 @@ function resolveGeminiModel() {
   );
 }
 
-function extractCandidateText(payload: GeminiGenerateContentResponse) {
-  return payload.candidates
+function createGoogleGenAiClient() {
+  const vertexApiKey = resolveVertexApiKey();
+
+  if (vertexApiKey) {
+    return new GoogleGenAI({
+      vertexai: true,
+      apiKey: vertexApiKey,
+      apiVersion: "v1",
+    });
+  }
+
+  const vertexProject = resolveVertexProject();
+
+  if (vertexProject) {
+    return new GoogleGenAI({
+      vertexai: true,
+      project: vertexProject,
+      location: resolveVertexLocation(),
+      apiVersion: "v1",
+    });
+  }
+
+  const geminiApiKey = resolveGeminiApiKey();
+
+  if (geminiApiKey) {
+    return new GoogleGenAI({
+      apiKey: geminiApiKey,
+    });
+  }
+
+  return null;
+}
+
+function extractCandidateText(response: {
+  text?: string;
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+}) {
+  if (typeof response.text === "string" && response.text.trim()) {
+    return response.text.trim();
+  }
+
+  return response.candidates
     ?.flatMap((candidate) => candidate.content?.parts ?? [])
     .map((part) => part.text?.trim())
     .find((text): text is string => Boolean(text));
@@ -177,74 +245,32 @@ export async function analyzePangyoSpeechWithGemini(
   const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
   try {
+    const client = createGoogleGenAiClient();
+
+    if (!client) {
+      return null;
+    }
+
     const model = resolveGeminiModel();
-    const vertexApiKey = resolveVertexApiKey();
-    const geminiApiKey = resolveGeminiApiKey();
-    const requestBody = {
-      systemInstruction: {
-        parts: [{ text: buildPangyoSystemPrompt() }],
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: buildPangyoUserPrompt(input) }],
-        },
-      ],
-      generationConfig: {
+    const response = await client.models.generateContent({
+      model,
+      contents: buildPangyoUserPrompt(input),
+      config: {
+        abortSignal: controller.signal,
+        systemInstruction: buildPangyoSystemPrompt(),
         temperature: 0.2,
         topP: 0.8,
         maxOutputTokens: 220,
         responseMimeType: "application/json",
+        responseSchema: GEMINI_RESPONSE_SCHEMA,
       },
-    };
+    });
 
-    let response: Response | null = null;
-
-    if (vertexApiKey) {
-      response = await fetch(
-        `${VERTEX_EXPRESS_API_BASE_URL}/${model}:generateContent?key=${encodeURIComponent(vertexApiKey)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(requestBody),
-          cache: "no-store",
-          signal: controller.signal,
-        },
-      );
-    } else if (geminiApiKey) {
-      response = await fetch(`${GEMINI_API_BASE_URL}/${model}:generateContent`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": geminiApiKey,
-        },
-        body: JSON.stringify({
-          ...requestBody,
-          generationConfig: {
-            ...requestBody.generationConfig,
-            thinkingConfig: {
-              thinkingBudget: 0,
-            },
-          },
-        }),
-        cache: "no-store",
-        signal: controller.signal,
-      });
-    }
-
-    if (!response?.ok) {
+    if (response.promptFeedback?.blockReason) {
       return null;
     }
 
-    const payload = (await response.json()) as GeminiGenerateContentResponse;
-
-    if (payload.promptFeedback?.blockReason) {
-      return null;
-    }
-
-    const candidateText = extractCandidateText(payload);
+    const candidateText = extractCandidateText(response);
 
     if (!candidateText) {
       return null;

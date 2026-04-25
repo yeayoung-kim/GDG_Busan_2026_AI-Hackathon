@@ -47,11 +47,21 @@ type RecognitionState =
   | "checking"
   | "ready"
   | "listening"
+  | "processing"
   | "blocked"
   | "unsupported";
 
+type RecognitionMode = "speech-recognition" | "media-recorder" | "manual";
 type PanelView = "logs" | "metrics";
 type AudioActivityState = "inactive" | "muted" | "silent" | "speaking";
+
+const LOCAL_SPEAKING_THRESHOLD = 0.034;
+const REMOTE_SPEAKING_THRESHOLD = 0.028;
+const RECORDER_START_THRESHOLD = 0.034;
+const RECORDER_SILENCE_THRESHOLD = 0.022;
+const RECORDER_MIN_DURATION_MS = 700;
+const RECORDER_SILENCE_DURATION_MS = 900;
+const RECORDER_MAX_DURATION_MS = 12_000;
 
 interface AudioMeterHandle {
   analyser: AnalyserNode;
@@ -111,12 +121,144 @@ function isModerationActive(moderation: ModerationState | null) {
   return new Date(moderation.endsAt).getTime() > Date.now();
 }
 
+function mergeModerationState(
+  current: ModerationState | null,
+  next: ModerationState | null,
+) {
+  if (next) {
+    return next;
+  }
+
+  if (current && isModerationActive(current)) {
+    return current;
+  }
+
+  return null;
+}
+
 function resolveRecognitionConstructor() {
   if (typeof window === "undefined") {
     return null;
   }
 
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
+}
+
+function hasMediaRecorderSupport() {
+  return typeof window !== "undefined" && "MediaRecorder" in window;
+}
+
+function resolveRecognitionMode(): RecognitionMode {
+  if (resolveRecognitionConstructor()) {
+    return "speech-recognition";
+  }
+
+  if (hasMediaRecorderSupport()) {
+    return "media-recorder";
+  }
+
+  return "manual";
+}
+
+function resolveRecorderMimeType() {
+  if (!hasMediaRecorderSupport()) {
+    return "";
+  }
+
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/m4a",
+    "video/mp4",
+    "video/webm",
+  ];
+
+  return (
+    candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? ""
+  );
+}
+
+async function requestLocalMedia() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return {
+      stream: null as MediaStream | null,
+      warning: "브라우저 미디어 캡처를 사용할 수 없어 텍스트 릴레이 중심으로 계속합니다.",
+    };
+  }
+
+  const preferredConstraints: MediaStreamConstraints = {
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: "user",
+    },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  };
+
+  try {
+    return {
+      stream: await navigator.mediaDevices.getUserMedia(preferredConstraints),
+      warning: "",
+    };
+  } catch {
+    try {
+      return {
+        stream: await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: preferredConstraints.audio,
+        }),
+        warning: "카메라 접근에 실패해 오디오 우선 모드로 계속합니다.",
+      };
+    } catch {
+      return {
+        stream: null as MediaStream | null,
+        warning:
+          "카메라 또는 마이크 접근에 실패했습니다. 방은 계속 유지하고, 브라우저 STT 또는 텍스트 릴레이로 분석을 이어갑니다.",
+      };
+    }
+  }
+}
+
+function attachStreamToVideo(
+  videoElement: HTMLVideoElement | null,
+  stream: MediaStream | null,
+  muted: boolean,
+) {
+  if (!videoElement) {
+    return;
+  }
+
+  if (videoElement.srcObject !== stream) {
+    videoElement.srcObject = stream;
+  }
+
+  videoElement.muted = muted;
+
+  if (!stream) {
+    return;
+  }
+
+  const playback = videoElement.play();
+
+  if (playback && typeof playback.catch === "function") {
+    void playback.catch(() => undefined);
+  }
+}
+
+function hasLiveVideoTrack(stream: MediaStream | null) {
+  if (!stream) {
+    return false;
+  }
+
+  return stream.getVideoTracks().some((track) => track.readyState === "live");
 }
 
 async function parseJson<T>(response: Response) {
@@ -143,6 +285,10 @@ function getCallStatusLabel(status: "waiting" | "connecting" | "live") {
 function getRecognitionLabel(state: RecognitionState) {
   if (state === "listening") {
     return "라이브 감시 중";
+  }
+
+  if (state === "processing") {
+    return "발화 분석 중";
   }
 
   if (state === "unsupported") {
@@ -417,7 +563,7 @@ function AlertOverlay({ moderation }: AlertOverlayProps) {
         </div>
 
         <h2 className="mt-8 text-[clamp(3rem,6vw,5.75rem)] font-black uppercase leading-[0.94] tracking-[-0.06em] text-white">
-          판교어 번역 중
+          판교어 재생 중
         </h2>
 
         <div className="mt-10 border-l border-white/12 pl-5 sm:pl-10">
@@ -465,6 +611,8 @@ export function LiveRoomScreen({
 }: LiveRoomScreenProps) {
   const router = useRouter();
   const [participantId] = useState(() => createParticipantId());
+  const [recognitionMode, setRecognitionMode] =
+    useState<RecognitionMode>("manual");
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>("booting");
   const [recognitionState, setRecognitionState] =
     useState<RecognitionState>("checking");
@@ -482,6 +630,7 @@ export function LiveRoomScreen({
   const [lastTranscriptAt, setLastTranscriptAt] = useState("");
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [remoteSpeaking, setRemoteSpeaking] = useState(false);
+  const [remoteVideoReady, setRemoteVideoReady] = useState(false);
   const [callStatus, setCallStatus] = useState<"waiting" | "connecting" | "live">(
     "waiting",
   );
@@ -498,6 +647,14 @@ export function LiveRoomScreen({
   const localAudioMeterRef = useRef<AudioMeterHandle | null>(null);
   const remoteAudioMeterRef = useRef<AudioMeterHandle | null>(null);
   const audioMeterFrameRef = useRef<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecorderChunksRef = useRef<Blob[]>([]);
+  const mediaRecorderMimeTypeRef = useRef("");
+  const mediaRecorderShouldSubmitRef = useRef(false);
+  const mediaRecorderStartedAtRef = useRef(0);
+  const mediaRecorderDurationMsRef = useRef(0);
+  const recorderSilenceSinceRef = useRef<number | null>(null);
+  const recorderUploadInFlightRef = useRef(false);
   const localSpeakingUntilRef = useRef(0);
   const remoteSpeakingUntilRef = useRef(0);
   const lastPlayedModerationRef = useRef<string | null>(null);
@@ -516,7 +673,9 @@ export function LiveRoomScreen({
   const effectiveMicEnabled = microphoneEnabled && !forcedMuted;
   const deferredInterimTranscript = useDeferredValue(interimTranscript);
   const showManualFallback =
-    recognitionState === "unsupported" || recognitionState === "blocked";
+    recognitionMode === "manual" ||
+    recognitionState === "unsupported" ||
+    recognitionState === "blocked";
 
   const currentParticipant = useMemo(() => {
     return participants.find((participant) => participant.id === participantId) ?? null;
@@ -551,30 +710,18 @@ export function LiveRoomScreen({
     async function bootstrap() {
       try {
         setBootstrapState("requesting-media");
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: "user",
-          },
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
+        setErrorMessage("");
+        const { stream, warning } = await requestLocalMedia();
 
         if (disposed) {
-          stream.getTracks().forEach((track) => track.stop());
+          stream?.getTracks().forEach((track) => track.stop());
           return;
         }
 
-        localStreamRef.current = stream;
-        connectAudioMeter("local", stream);
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
+        if (stream) {
+          localStreamRef.current = stream;
+          connectAudioMeter("local", stream);
+          attachStreamToVideo(localVideoRef.current, stream, true);
         }
 
         ensurePeerConnection();
@@ -600,16 +747,18 @@ export function LiveRoomScreen({
         cursorRef.current = payload.cursor;
         setParticipants(payload.room.participants);
         setLogs(payload.room.logs);
-        setModeration(payload.room.moderation);
+        setModeration((current) => mergeModerationState(current, payload.room.moderation));
         setRole(payload.role);
         setMicrophoneEnabled(payload.self.microphoneEnabled);
-        setCameraEnabled(payload.self.cameraEnabled);
+        setCameraEnabled(stream?.getVideoTracks().length ? payload.self.cameraEnabled : false);
         joinedRoomRef.current = true;
         setBootstrapState("ready");
 
-        const RecognitionConstructor = resolveRecognitionConstructor();
+        const nextRecognitionMode = resolveRecognitionMode();
         recognitionBlockedRef.current = false;
-        setRecognitionState(RecognitionConstructor ? "ready" : "unsupported");
+        setRecognitionMode(nextRecognitionMode);
+        setRecognitionState(nextRecognitionMode === "manual" ? "unsupported" : "ready");
+        setErrorMessage(warning);
         startPolling();
       } catch (error) {
         setBootstrapState("failed");
@@ -642,9 +791,7 @@ export function LiveRoomScreen({
   }, [cameraEnabled, effectiveMicEnabled]);
 
   useEffect(() => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.muted = forcedMuted;
-    }
+    attachStreamToVideo(remoteVideoRef.current, remoteStreamRef.current, forcedMuted);
   }, [forcedMuted]);
 
   useEffect(() => {
@@ -701,20 +848,39 @@ export function LiveRoomScreen({
   useEffect(() => {
     if (bootstrapState !== "ready") {
       stopRecognition();
+      stopRecorderCapture(false);
       return;
     }
 
     if (!monitoringEnabled || !microphoneEnabled || forcedMuted) {
       stopRecognition();
+      stopRecorderCapture(false);
       return;
     }
 
-    startRecognition();
+    if (recognitionMode === "speech-recognition") {
+      startRecognition();
 
-    return () => {
-      stopRecognition();
-    };
-  }, [bootstrapState, forcedMuted, microphoneEnabled, monitoringEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+      return () => {
+        stopRecognition();
+      };
+    }
+
+    stopRecognition();
+
+    if (recognitionMode === "media-recorder") {
+      return () => {
+        stopRecorderCapture(false);
+      };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    bootstrapState,
+    forcedMuted,
+    microphoneEnabled,
+    monitoringEnabled,
+    recognitionMode,
+  ]);
 
   // Device sync is fire-and-forget and should not retrigger from recreated helpers.
   useEffect(() => {
@@ -747,6 +913,7 @@ export function LiveRoomScreen({
       isUnmountingRef.current = true;
       stopPolling();
       stopRecognition();
+      stopRecorderCapture(false);
       stopAudioMeterLoop();
       disconnectAudioMeter("local");
       disconnectAudioMeter("remote");
@@ -833,6 +1000,10 @@ export function LiveRoomScreen({
     meterRef.current = null;
     resetSpeakingState(target);
 
+    if (target === "local") {
+      stopRecorderCapture(false);
+    }
+
     if (!localAudioMeterRef.current && !remoteAudioMeterRef.current) {
       stopAudioMeterLoop();
     }
@@ -875,9 +1046,259 @@ export function LiveRoomScreen({
     return Math.sqrt(total / meter.data.length);
   }
 
+  function isRecorderMonitoringActive() {
+    return (
+      recognitionMode === "media-recorder" &&
+      bootstrapState === "ready" &&
+      monitoringEnabled &&
+      microphoneEnabled &&
+      !forcedMuted &&
+      Boolean(
+        localStreamRef.current?.getAudioTracks().some((track) => track.readyState === "live"),
+      )
+    );
+  }
+
+  function resetRecorderSession() {
+    mediaRecorderRef.current = null;
+    mediaRecorderChunksRef.current = [];
+    mediaRecorderMimeTypeRef.current = "";
+    mediaRecorderShouldSubmitRef.current = false;
+    mediaRecorderStartedAtRef.current = 0;
+    mediaRecorderDurationMsRef.current = 0;
+    recorderSilenceSinceRef.current = null;
+  }
+
+  async function submitRecordedAudio(blob: Blob, durationMs: number) {
+    if (!blob.size || isUnmountingRef.current) {
+      return;
+    }
+
+    recorderUploadInFlightRef.current = true;
+    setRecognitionState("processing");
+    let fallbackToManual = false;
+
+    try {
+      const mimeType = blob.type || "audio/webm";
+      const extension = mimeType.includes("ogg")
+        ? "ogg"
+        : mimeType.includes("mp4") || mimeType.includes("m4a") || mimeType.includes("aac")
+          ? "m4a"
+          : mimeType.includes("wav")
+            ? "wav"
+            : "webm";
+      const formData = new FormData();
+      formData.set("audio", blob, `utterance-${Date.now()}.${extension}`);
+      formData.set("mimeType", mimeType);
+      formData.set("durationMs", String(Math.max(0, Math.round(durationMs))));
+
+      const response = await fetch("/api/stt", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await parseJson<{
+        transcript?: string;
+        ignored?: boolean;
+      }>(response);
+
+      if (payload.ignored || !payload.transcript?.trim()) {
+        return;
+      }
+
+      setLastTranscriptAt(new Date().toISOString());
+      await submitTranscript(payload.transcript);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "음성 전사 처리에 실패했습니다.";
+
+      if (
+        /Cloud STT|Speech-to-Text|ADC|application default credentials|project id/i.test(
+          message,
+        )
+      ) {
+        fallbackToManual = true;
+        setRecognitionMode("manual");
+      }
+
+      setErrorMessage(message);
+    } finally {
+      recorderUploadInFlightRef.current = false;
+
+      if (isUnmountingRef.current) {
+        return;
+      }
+
+      if (fallbackToManual) {
+        setRecognitionState("unsupported");
+        return;
+      }
+
+      if (isRecorderMonitoringActive()) {
+        setRecognitionState("listening");
+        return;
+      }
+
+      setRecognitionState((current) =>
+        current === "blocked" || current === "unsupported" ? current : "ready",
+      );
+    }
+  }
+
+  function stopRecorderCapture(submit: boolean) {
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderShouldSubmitRef.current = submit;
+    recorderSilenceSinceRef.current = null;
+
+    if (!recorder) {
+      if (!submit && !isUnmountingRef.current && isRecorderMonitoringActive()) {
+        setRecognitionState((current) => (current === "processing" ? current : "listening"));
+      }
+
+      return;
+    }
+
+    try {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+        return;
+      }
+    } catch {
+      // Fall through to cleanup if the recorder is already torn down.
+    }
+
+    resetRecorderSession();
+  }
+
+  function startRecorderCapture() {
+    if (
+      !hasMediaRecorderSupport() ||
+      mediaRecorderRef.current ||
+      recorderUploadInFlightRef.current ||
+      isUnmountingRef.current
+    ) {
+      return;
+    }
+
+    const audioTracks = localStreamRef.current?.getAudioTracks().filter((track) => {
+      return track.readyState === "live" && track.enabled;
+    });
+
+    if (!audioTracks?.length) {
+      return;
+    }
+
+    try {
+      const mimeType = resolveRecorderMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(new MediaStream(audioTracks), { mimeType })
+        : new MediaRecorder(new MediaStream(audioTracks));
+
+      mediaRecorderRef.current = recorder;
+      mediaRecorderChunksRef.current = [];
+      mediaRecorderMimeTypeRef.current = recorder.mimeType || mimeType;
+      mediaRecorderShouldSubmitRef.current = true;
+      mediaRecorderStartedAtRef.current = performance.now();
+      mediaRecorderDurationMsRef.current = 0;
+      recorderSilenceSinceRef.current = null;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          mediaRecorderChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setRecognitionMode("manual");
+        setRecognitionState("unsupported");
+        setErrorMessage(
+          "이 브라우저에서 자동 음성 녹음이 안정적으로 동작하지 않아 수동 입력으로 전환했습니다.",
+        );
+        mediaRecorderShouldSubmitRef.current = false;
+      };
+
+      recorder.onstop = () => {
+        const shouldSubmit = mediaRecorderShouldSubmitRef.current;
+        const durationMs = mediaRecorderDurationMsRef.current;
+        const chunks = [...mediaRecorderChunksRef.current];
+        const mimeType =
+          recorder.mimeType || mediaRecorderMimeTypeRef.current || chunks[0]?.type || "";
+
+        resetRecorderSession();
+
+        if (!shouldSubmit || chunks.length === 0 || isUnmountingRef.current) {
+          if (!isUnmountingRef.current && isRecorderMonitoringActive()) {
+            setRecognitionState("listening");
+          }
+
+          return;
+        }
+
+        const blob = mimeType ? new Blob(chunks, { type: mimeType }) : new Blob(chunks);
+        void submitRecordedAudio(blob, durationMs);
+      };
+
+      recorder.start();
+      setRecognitionState("listening");
+    } catch {
+      setRecognitionMode("manual");
+      setRecognitionState("unsupported");
+      setErrorMessage(
+        "이 브라우저는 자동 음성 녹음 경로를 지원하지 않아 수동 입력으로 전환했습니다.",
+      );
+    }
+  }
+
+  function handleRecorderMonitoring(level: number, now: number) {
+    if (!isRecorderMonitoringActive()) {
+      stopRecorderCapture(false);
+      return;
+    }
+
+    if (recorderUploadInFlightRef.current) {
+      setRecognitionState("processing");
+      return;
+    }
+
+    const recorder = mediaRecorderRef.current;
+
+    if (!recorder) {
+      if (level >= RECORDER_START_THRESHOLD) {
+        startRecorderCapture();
+      }
+
+      return;
+    }
+
+    if (recorder.state !== "recording") {
+      return;
+    }
+
+    mediaRecorderDurationMsRef.current = Math.max(0, now - mediaRecorderStartedAtRef.current);
+
+    if (level >= RECORDER_SILENCE_THRESHOLD) {
+      recorderSilenceSinceRef.current = null;
+    } else if (recorderSilenceSinceRef.current === null) {
+      recorderSilenceSinceRef.current = now;
+    }
+
+    if (mediaRecorderDurationMsRef.current >= RECORDER_MAX_DURATION_MS) {
+      stopRecorderCapture(true);
+      return;
+    }
+
+    if (
+      mediaRecorderDurationMsRef.current >= RECORDER_MIN_DURATION_MS &&
+      recorderSilenceSinceRef.current !== null &&
+      now - recorderSilenceSinceRef.current >= RECORDER_SILENCE_DURATION_MS
+    ) {
+      stopRecorderCapture(true);
+    }
+  }
+
   function updateSpeakingMeter(target: "local" | "remote") {
     const meter = target === "local" ? localAudioMeterRef.current : remoteAudioMeterRef.current;
-    const threshold = target === "local" ? 0.034 : 0.028;
+    const threshold =
+      target === "local" ? LOCAL_SPEAKING_THRESHOLD : REMOTE_SPEAKING_THRESHOLD;
     const speakingUntilRef =
       target === "local" ? localSpeakingUntilRef : remoteSpeakingUntilRef;
     const setSpeaking = target === "local" ? setLocalSpeaking : setRemoteSpeaking;
@@ -885,6 +1306,11 @@ export function LiveRoomScreen({
     if (!meter) {
       speakingUntilRef.current = 0;
       setSpeaking((current) => (current ? false : current));
+
+      if (target === "local") {
+        handleRecorderMonitoring(0, performance.now());
+      }
+
       return;
     }
 
@@ -897,6 +1323,10 @@ export function LiveRoomScreen({
 
     const nextSpeaking = speakingUntilRef.current > now;
     setSpeaking((current) => (current === nextSpeaking ? current : nextSpeaking));
+
+    if (target === "local") {
+      handleRecorderMonitoring(level, now);
+    }
   }
 
   function startAudioMeterLoop() {
@@ -973,10 +1403,8 @@ export function LiveRoomScreen({
 
     const remoteStream = new MediaStream();
     remoteStreamRef.current = remoteStream;
-
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStream;
-    }
+    setRemoteVideoReady(false);
+    attachStreamToVideo(remoteVideoRef.current, remoteStream, forcedMuted);
 
     localStreamRef.current?.getTracks().forEach((track) => {
       connection.addTrack(track, localStreamRef.current as MediaStream);
@@ -987,8 +1415,20 @@ export function LiveRoomScreen({
         if (!remoteStream.getTracks().some((existingTrack) => existingTrack.id === track.id)) {
           remoteStream.addTrack(track);
         }
+
+        if (track.kind === "video") {
+          const syncRemoteVideoReady = () => {
+            setRemoteVideoReady(hasLiveVideoTrack(remoteStream));
+          };
+
+          track.onunmute = syncRemoteVideoReady;
+          track.onmute = syncRemoteVideoReady;
+          track.onended = syncRemoteVideoReady;
+        }
       });
 
+      setRemoteVideoReady(hasLiveVideoTrack(remoteStream));
+      attachStreamToVideo(remoteVideoRef.current, remoteStream, forcedMuted);
       connectAudioMeter("remote", remoteStream);
     };
 
@@ -1002,23 +1442,43 @@ export function LiveRoomScreen({
       void sendSignal("candidate", event.candidate.toJSON(), targetParticipantId);
     };
 
-    connection.onconnectionstatechange = () => {
+    const syncConnectionState = () => {
       const state = connection.connectionState;
+      const iceState = connection.iceConnectionState;
 
-      if (state === "connected") {
+      if (
+        state === "connected" ||
+        iceState === "connected" ||
+        iceState === "completed"
+      ) {
         setCallStatus("live");
         return;
       }
 
-      if (state === "connecting") {
+      if (
+        state === "new" ||
+        state === "connecting" ||
+        iceState === "new" ||
+        iceState === "checking"
+      ) {
         setCallStatus("connecting");
         return;
       }
 
-      if (state === "disconnected" || state === "failed" || state === "closed") {
+      if (
+        state === "disconnected" ||
+        state === "failed" ||
+        state === "closed" ||
+        iceState === "disconnected" ||
+        iceState === "failed" ||
+        iceState === "closed"
+      ) {
         setCallStatus(remoteParticipantIdRef.current ? "connecting" : "waiting");
       }
     };
+
+    connection.onconnectionstatechange = syncConnectionState;
+    connection.oniceconnectionstatechange = syncConnectionState;
 
     peerConnectionRef.current = connection;
     return connection;
@@ -1030,6 +1490,7 @@ export function LiveRoomScreen({
     makingOfferRef.current = false;
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    setRemoteVideoReady(false);
     disconnectAudioMeter("remote");
 
     if (remoteStreamRef.current) {
@@ -1164,7 +1625,7 @@ export function LiveRoomScreen({
     cursorRef.current = payload.cursor;
     setParticipants(payload.room.participants);
     setLogs(payload.room.logs);
-    setModeration(payload.room.moderation);
+    setModeration((current) => mergeModerationState(current, payload.room.moderation));
 
     if (payload.events.length > 0) {
       await handleSignals(payload.events);
@@ -1189,12 +1650,12 @@ export function LiveRoomScreen({
         }
       } finally {
         if (!isUnmountingRef.current) {
-          pollingTimerRef.current = window.setTimeout(loop, 900);
+          pollingTimerRef.current = window.setTimeout(loop, 300);
         }
       }
     };
 
-    pollingTimerRef.current = window.setTimeout(loop, 900);
+    pollingTimerRef.current = window.setTimeout(loop, 300);
   }
 
   function stopPolling() {
@@ -1263,7 +1724,9 @@ export function LiveRoomScreen({
     const RecognitionConstructor = resolveRecognitionConstructor();
 
     if (!RecognitionConstructor) {
-      setRecognitionState("unsupported");
+      const fallbackMode = hasMediaRecorderSupport() ? "media-recorder" : "manual";
+      setRecognitionMode(fallbackMode);
+      setRecognitionState(fallbackMode === "manual" ? "unsupported" : "ready");
       return;
     }
 
@@ -1282,6 +1745,13 @@ export function LiveRoomScreen({
         recognitionBlockedRef.current = true;
         setRecognitionState("blocked");
         stopRecognition(true);
+        return;
+      }
+
+      if (hasMediaRecorderSupport()) {
+        setRecognitionMode("media-recorder");
+        stopRecognition(true);
+        setRecognitionState("ready");
         return;
       }
 
@@ -1345,6 +1815,12 @@ export function LiveRoomScreen({
     } catch {
       recognitionRef.current = null;
 
+      if (hasMediaRecorderSupport()) {
+        setRecognitionMode("media-recorder");
+        setRecognitionState("ready");
+        return;
+      }
+
       if (!isUnmountingRef.current && !recognitionBlockedRef.current) {
         recognitionRestartTimerRef.current = window.setTimeout(() => {
           recognitionRestartTimerRef.current = null;
@@ -1382,17 +1858,7 @@ export function LiveRoomScreen({
       cursorRef.current = payload.cursor;
       setParticipants(payload.room.participants);
       setLogs(payload.room.logs);
-      setModeration((current) => {
-        if (payload.room.moderation) {
-          return payload.room.moderation;
-        }
-
-        if (current && isModerationActive(current)) {
-          return current;
-        }
-
-        return null;
-      });
+      setModeration((current) => mergeModerationState(current, payload.room.moderation));
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "발화 분석 처리에 실패했습니다.",
@@ -1418,6 +1884,7 @@ export function LiveRoomScreen({
   const remotePanelName = formatMonitorParticipantName(
     remoteParticipant?.name ?? "REMOTE_PGY",
   );
+  const showRemoteVideo = Boolean(remoteParticipant?.cameraEnabled) && remoteVideoReady;
   const localAudioActivityState: AudioActivityState = !localStreamRef.current
     ? "inactive"
     : !effectiveMicEnabled
@@ -1433,9 +1900,13 @@ export function LiveRoomScreen({
         : "silent";
   const liveListeningCopy = deferredInterimTranscript
     ? deferredInterimTranscript
-    : recognitionState === "listening"
-      ? "비즈니스 임팩트를 측정할 다음 발화를 기다리는 중..."
-      : "다음 문장이 들어오면 톤 앤 매너 기준으로 즉시 분석합니다.";
+    : recognitionState === "processing"
+      ? "방금 감지한 발화를 전사하고 톤 앤 매너 기준으로 분석하는 중..."
+      : recognitionMode === "media-recorder"
+        ? "발화가 감지되면 짧게 녹음해 서버 전사 후 즉시 분석합니다."
+        : recognitionState === "listening"
+          ? "비즈니스 임팩트를 측정할 다음 발화를 기다리는 중..."
+          : "다음 문장이 들어오면 톤 앤 매너 기준으로 즉시 분석합니다.";
 
   if (!resolvedParticipantName.trim()) {
     return (
@@ -1495,23 +1966,28 @@ export function LiveRoomScreen({
 
               <VideoTile
                 videoRef={remoteVideoRef}
-                showVideo={Boolean(remoteParticipant) && displayCallStatus === "live"}
-                grayscale
+                showVideo={showRemoteVideo}
                 title={remotePanelName}
                 badge={remotePanelName}
                 badgeActive={displayCallStatus === "live"}
                 footerStatus={
                   displayCallStatus === "live"
                     ? "REMOTE CHANNEL SYNCED"
-                    : "원격 참가자 대기 중"
+                    : remoteParticipant
+                      ? "REMOTE FEED SYNCING"
+                      : "원격 참가자 대기 중"
                 }
                 audioActivityState={remoteAudioActivityState}
                 centerContent={
                   <div>
                     <p className="font-mono text-[0.82rem] uppercase tracking-[0.26em] text-[#7b7b7b]">
-                      {displayCallStatus === "connecting"
-                        ? "HANDSHAKING REMOTE FEED"
-                        : "WAITING FOR REMOTE_PGY"}
+                      {!remoteParticipant
+                        ? "WAITING FOR REMOTE_PGY"
+                        : !remoteParticipant.cameraEnabled
+                          ? "REMOTE CAMERA INACTIVE"
+                          : displayCallStatus === "connecting"
+                            ? "HANDSHAKING REMOTE FEED"
+                            : "SYNCING REMOTE VIDEO"}
                     </p>
                   </div>
                 }
@@ -1589,8 +2065,9 @@ export function LiveRoomScreen({
                           MANUAL INPUT ENABLED
                         </p>
                         <p className="mt-3 text-sm leading-7 text-[#b9b9b9]">
-                          Browser speech recognition is unavailable, so this room
-                          is listening through text relay instead.
+                          Automatic speech capture is unavailable in this
+                          environment, so this room is listening through text
+                          relay instead.
                         </p>
                         <form
                           className="mt-4 space-y-3"
@@ -1761,7 +2238,7 @@ export function LiveRoomScreen({
                             onChange={(event) =>
                               setManualTranscript(event.target.value)
                             }
-                            placeholder="Type a replacement transcript if the browser blocks live STT."
+                            placeholder="Type a replacement transcript if automatic capture is unavailable."
                             className="w-full resize-none border border-white/10 bg-black px-4 py-3 text-sm leading-7 text-white outline-none transition-colors focus:border-[var(--align-accent)]"
                           />
                           <button
