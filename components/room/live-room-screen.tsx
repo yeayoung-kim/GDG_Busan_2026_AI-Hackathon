@@ -1650,12 +1650,12 @@ export function LiveRoomScreen({
         }
       } finally {
         if (!isUnmountingRef.current) {
-          pollingTimerRef.current = window.setTimeout(loop, 300);
+          pollingTimerRef.current = window.setTimeout(loop, 900);
         }
       }
     };
 
-    pollingTimerRef.current = window.setTimeout(loop, 300);
+    pollingTimerRef.current = window.setTimeout(loop, 900);
   }
 
   function stopPolling() {

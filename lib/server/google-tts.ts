@@ -7,31 +7,8 @@ interface SynthesizedSpeech {
 const METADATA_TOKEN_URL =
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
 const GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
-const TOKEN_REFRESH_BUFFER_MS = 30_000;
-const TOKEN_FAILURE_BACKOFF_MS = 60_000;
-
-let cachedAccessToken:
-  | {
-      value: string;
-      expiresAt: number;
-    }
-  | null = null;
-let nextMetadataRetryAt = 0;
 
 async function fetchAccessToken() {
-  const now = Date.now();
-
-  if (
-    cachedAccessToken &&
-    cachedAccessToken.expiresAt - TOKEN_REFRESH_BUFFER_MS > now
-  ) {
-    return cachedAccessToken.value;
-  }
-
-  if (nextMetadataRetryAt > now) {
-    return null;
-  }
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1200);
 
@@ -45,28 +22,12 @@ async function fetchAccessToken() {
     });
 
     if (!response.ok) {
-      nextMetadataRetryAt = Date.now() + TOKEN_FAILURE_BACKOFF_MS;
       return null;
     }
 
-    const payload = (await response.json()) as {
-      access_token?: string;
-      expires_in?: number;
-    };
-
-    if (!payload.access_token) {
-      nextMetadataRetryAt = Date.now() + TOKEN_FAILURE_BACKOFF_MS;
-      return null;
-    }
-
-    cachedAccessToken = {
-      value: payload.access_token,
-      expiresAt: Date.now() + Math.max(60, payload.expires_in ?? 3600) * 1000,
-    };
-    nextMetadataRetryAt = 0;
-    return payload.access_token;
+    const payload = (await response.json()) as { access_token?: string };
+    return payload.access_token ?? null;
   } catch {
-    nextMetadataRetryAt = Date.now() + TOKEN_FAILURE_BACKOFF_MS;
     return null;
   } finally {
     clearTimeout(timeout);
